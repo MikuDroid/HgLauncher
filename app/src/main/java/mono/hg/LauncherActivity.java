@@ -32,6 +32,7 @@ import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.appcompat.app.AppCompatDelegate;
 import androidx.appcompat.widget.PopupMenu;
 import androidx.coordinatorlayout.widget.CoordinatorLayout;
 import androidx.interpolator.view.animation.FastOutLinearInInterpolator;
@@ -335,8 +336,8 @@ public class LauncherActivity extends AppCompatActivity {
         // See if user has changed icon pack. Clear cache if true.
         if (PreferenceHelper.getPreference().getBoolean("require_refresh", false) ||
                 !PreferenceHelper.getPreference()
-                             .getString("icon_pack", "default")
-                             .equals(PreferenceHelper.getIconPackName())) {
+                                 .getString("icon_pack", "default")
+                                 .equals(PreferenceHelper.getIconPackName())) {
             LauncherIconHelper.refreshIcons();
         }
 
@@ -559,7 +560,8 @@ public class LauncherActivity extends AppCompatActivity {
         }
 
         if ("transparent".equals(PreferenceHelper.getListBackground())) {
-            appsListContainer.setBackgroundColor(Utils.getColorFromAttr(this, R.attr.backgroundColorAlt));
+            appsListContainer.setBackgroundColor(
+                    Utils.getColorFromAttr(this, R.attr.backgroundColorAlt));
         } else if ("none".equals(PreferenceHelper.getListBackground())) {
             appsListContainer.setBackgroundColor(Color.TRANSPARENT);
         }
@@ -588,14 +590,24 @@ public class LauncherActivity extends AppCompatActivity {
         // Set the app theme!
         switch (PreferenceHelper.appTheme()) {
             default:
+            case "auto":
+                if (Utils.atLeastQ()) {
+                    AppCompatDelegate.setDefaultNightMode(
+                            AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM);
+                } else {
+                    AppCompatDelegate.setDefaultNightMode(
+                            AppCompatDelegate.MODE_NIGHT_AUTO_BATTERY);
+                }
+                break;
             case "light":
-                setTheme(R.style.LauncherTheme);
+                AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO);
                 break;
             case "dark":
+                AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES);
                 setTheme(R.style.LauncherTheme_Dark);
                 break;
             case "black":
-                setTheme(R.style.LauncherTheme_Black);
+                AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES);
                 break;
         }
     }
