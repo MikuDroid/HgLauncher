@@ -38,6 +38,8 @@ import androidx.coordinatorlayout.widget.CoordinatorLayout;
 import androidx.interpolator.view.animation.FastOutLinearInInterpolator;
 import androidx.interpolator.view.animation.LinearOutSlowInInterpolator;
 import androidx.recyclerview.widget.DefaultItemAnimator;
+import androidx.recyclerview.widget.GridLayoutManager;
+import androidx.recyclerview.widget.ItemTouchHelper;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
@@ -52,6 +54,9 @@ import java.util.HashSet;
 
 import eu.davidea.flexibleadapter.FlexibleAdapter;
 import mono.hg.adapters.AppAdapter;
+import mono.hg.databinding.ActivityLauncherspaceBinding;
+import mono.hg.databinding.DialogStartHintBinding;
+import mono.hg.databinding.LayoutRenameDialogBinding;
 import mono.hg.fragments.WidgetsDialogFragment;
 import mono.hg.helpers.LauncherIconHelper;
 import mono.hg.helpers.PreferenceHelper;
@@ -72,9 +77,12 @@ import mono.hg.views.TogglingLinearLayoutManager;
 import mono.hg.wrappers.TextSpectator;
 
 public class LauncherActivity extends AppCompatActivity {
-
     private static int SETTINGS_RETURN_CODE = 12;
     private static int SHORTCUT_MENU_GROUP = 247;
+    /*
+     * Binding for this activity.
+     */
+    private ActivityLauncherspaceBinding binding;
     /*
      * List containing installed apps.
      */
@@ -131,7 +139,7 @@ public class LauncherActivity extends AppCompatActivity {
     /*
      * LinearLayoutManager used in appsRecyclerView.
      */
-    private TogglingLinearLayoutManager appsLayoutManager;
+    private RecyclerView.LayoutManager appsLayoutManager;
     /*
      * RecyclerView for pinned apps; shown in favourites panel.
      */
@@ -185,7 +193,8 @@ public class LauncherActivity extends AppCompatActivity {
         // Load preferences before setting layout.
         loadPref();
 
-        setContentView(R.layout.activity_launcherspace);
+        binding = ActivityLauncherspaceBinding.inflate(getLayoutInflater());
+        setContentView(binding.getRoot());
 
         if (getRequestedOrientation() != PreferenceHelper.getOrientation()) {
             setRequestedOrientation(PreferenceHelper.getOrientation());
@@ -193,22 +202,25 @@ public class LauncherActivity extends AppCompatActivity {
 
         manager = getPackageManager();
 
-        appsLayoutManager = new TogglingLinearLayoutManager(this,
-                LinearLayoutManager.VERTICAL, true);
+        if (PreferenceHelper.useGrid()) {
+            appsLayoutManager = new GridLayoutManager(this, 5);
+        } else {
+            appsLayoutManager = new TogglingLinearLayoutManager(this, LinearLayoutManager.VERTICAL, true);
+        }
 
         final LinearLayoutManager pinnedAppsManager = new LinearLayoutManager(this,
                 LinearLayoutManager.HORIZONTAL, false);
 
-        appsListContainer = findViewById(R.id.app_list_container);
-        searchContainer = findViewById(R.id.search_container);
-        pinnedAppsContainer = findViewById(R.id.pinned_apps_container);
-        searchBar = findViewById(R.id.search);
-        slidingHome = findViewById(R.id.slide_home);
-        touchReceiver = findViewById(R.id.touch_receiver);
-        appsRecyclerView = findViewById(R.id.apps_list);
-        pinnedAppsRecyclerView = findViewById(R.id.pinned_apps_list);
-        searchContext = findViewById(R.id.search_context_button);
-        loadProgress = findViewById(R.id.load_progress);
+        appsListContainer = binding.appListContainer;
+        searchContainer = binding.searchContainer.searchContainer;
+        pinnedAppsContainer = binding.pinnedAppsContainer;
+        searchBar = binding.searchContainer.search;
+        slidingHome = binding.slideHome;
+        touchReceiver = binding.touchReceiver;
+        appsRecyclerView = binding.appsList;
+        pinnedAppsRecyclerView = binding.pinnedAppsList;
+        searchContext = binding.searchContainer.searchContextButton;
+        loadProgress = binding.loadProgress;
 
         if (Utils.atLeastLollipop()) {
             launcherApps = (LauncherApps) getSystemService(LAUNCHER_APPS_SERVICE);
@@ -240,6 +252,7 @@ public class LauncherActivity extends AppCompatActivity {
         pinnedAppsRecyclerView.setItemAnimator(null);
 
         pinnedAppsAdapter.setLongPressDragEnabled(true);
+        pinnedAppsAdapter.getItemTouchHelperCallback().setMoveThreshold(1f);
 
         // Get icons from icon pack.
         if (!"default".equals(PreferenceHelper.getIconPackName()) &&
@@ -550,13 +563,12 @@ public class LauncherActivity extends AppCompatActivity {
 
         // Switch on wallpaper shade.
         if (PreferenceHelper.useWallpaperShade()) {
-            View wallpaperShade = findViewById(R.id.wallpaper_shade);
             // Tints the navigation bar with a semi-transparent shade.
             if (Utils.atLeastLollipop()) {
                 getWindow().setNavigationBarColor(
                         getResources().getColor(R.color.navigationBarShade));
             }
-            wallpaperShade.setBackgroundResource(R.drawable.image_inner_shadow);
+            binding.wallpaperShade.setBackgroundResource(R.drawable.image_inner_shadow);
         }
 
         if ("transparent".equals(PreferenceHelper.getListBackground())) {
@@ -950,18 +962,6 @@ public class LauncherActivity extends AppCompatActivity {
             }
         });
 
-        // Also add a similar long click action for the favourites panel.
-        pinnedAppsAdapter.addListener(new FlexibleAdapter.OnItemLongClickListener() {
-            @Override public void onItemLongClick(int position) {
-                App app = Utils.requireNonNull(pinnedAppsAdapter.getItem(position));
-
-                // Use LayoutManager method to get the view,
-                // as RecyclerView will happily return null if it can.
-                createAppMenu(Utils.requireNonNull(pinnedAppsRecyclerView.getLayoutManager())
-                                   .findViewByPosition(position), true, app);
-            }
-        });
-
         appsAdapter.addListener(new FlexibleAdapter.OnUpdateListener() {
             @Override public void onUpdateEmptyView(int size) {
                 if (size > 0 && !appsAdapter.isEmpty()) {
@@ -978,11 +978,16 @@ public class LauncherActivity extends AppCompatActivity {
      */
     private void addAdapterListener() {
         pinnedAppsAdapter.addListener(new FlexibleAdapter.OnItemMoveListener() {
+            int newState = 0;
+            long startTime;
+
             @Override public boolean shouldMoveItem(int fromPosition, int toPosition) {
                 return true;
             }
 
             @Override public void onItemMove(int fromPosition, int toPosition) {
+                startTime = System.currentTimeMillis();
+
                 // Close app menu when we're dragging.
                 doThis("dismiss_menu");
 
@@ -992,7 +997,25 @@ public class LauncherActivity extends AppCompatActivity {
             }
 
             @Override public void onActionStateChanged(RecyclerView.ViewHolder viewHolder, int actionState) {
-                updatePinnedApps(false);
+                // FIXME: Work out a better touch detection.
+                // No movement occurred, this is a long press.
+                if (newState != ItemTouchHelper.ACTION_STATE_DRAG && (System.currentTimeMillis() - startTime) == System
+                        .currentTimeMillis()) {
+                    App app = Utils.requireNonNull(
+                            pinnedAppsAdapter.getItem(viewHolder.getAbsoluteAdapterPosition()));
+
+                    // Use LayoutManager method to get the view,
+                    // as RecyclerView will happily return null if it can.
+                    createAppMenu(Utils.requireNonNull(pinnedAppsRecyclerView.getLayoutManager())
+                                       .findViewByPosition(viewHolder.getAbsoluteAdapterPosition()),
+                            true, app);
+                } else {
+                    // Reset startTime and update the pinned apps, we were swiping.
+                    startTime = 0;
+                    updatePinnedApps(false);
+                }
+
+                newState = actionState;
             }
         });
     }
@@ -1011,8 +1034,6 @@ public class LauncherActivity extends AppCompatActivity {
             }
 
             @Override public void onPanelStateChanged(View panel, int previousState, int newState) {
-                appsLayoutManager.setVerticalScrollEnabled(
-                        newState == SlidingUpPanelLayout.PanelState.COLLAPSED);
                 searchBar.setClickable(newState == SlidingUpPanelLayout.PanelState.COLLAPSED);
                 searchBar.setLongClickable(newState == SlidingUpPanelLayout.PanelState.COLLAPSED);
 
@@ -1127,19 +1148,18 @@ public class LauncherActivity extends AppCompatActivity {
     }
 
     public void showStartDialog() {
+        DialogStartHintBinding binding = DialogStartHintBinding.inflate(getLayoutInflater());
         final BottomSheetDialog startDialog = new BottomSheetDialog(this);
-        startDialog.setContentView(R.layout.dialog_start_hint);
+        startDialog.setContentView(binding.getRoot());
         startDialog.setCancelable(false);
         startDialog.getBehavior().setState(BottomSheetBehavior.STATE_EXPANDED);
-        Button startDismiss = startDialog.findViewById(R.id.dismiss);
-        if (startDismiss != null) {
-            startDismiss.setOnClickListener(new View.OnClickListener() {
-                @Override public void onClick(View view) {
-                    startDialog.dismiss();
-                    PreferenceHelper.update("is_new_user", false);
-                }
-            });
-        }
+        Button startDismiss = binding.dismiss;
+        startDismiss.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) {
+                startDialog.dismiss();
+                PreferenceHelper.update("is_new_user", false);
+            }
+        });
         startDialog.show();
     }
 
@@ -1151,11 +1171,11 @@ public class LauncherActivity extends AppCompatActivity {
      */
     private void makeRenameDialog(final String packageName, final int position) {
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
-        View view = View.inflate(this, R.layout.layout_rename_dialog, null);
+        LayoutRenameDialogBinding binding = LayoutRenameDialogBinding.inflate(getLayoutInflater());
 
-        final EditText renameField = view.findViewById(R.id.rename_field);
+        final EditText renameField = binding.renameField;
         renameField.setHint(PreferenceHelper.getLabel(packageName));
-        builder.setView(view);
+        builder.setView(binding.getRoot());
 
         builder.setNegativeButton(android.R.string.cancel, null)
                .setTitle(R.string.dialog_title_shorthand)
