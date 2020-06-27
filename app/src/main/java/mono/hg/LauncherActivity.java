@@ -38,7 +38,6 @@ import androidx.coordinatorlayout.widget.CoordinatorLayout;
 import androidx.interpolator.view.animation.FastOutLinearInInterpolator;
 import androidx.interpolator.view.animation.LinearOutSlowInInterpolator;
 import androidx.recyclerview.widget.DefaultItemAnimator;
-import androidx.recyclerview.widget.GridLayoutManager;
 import androidx.recyclerview.widget.ItemTouchHelper;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
@@ -71,9 +70,11 @@ import mono.hg.utils.AppUtils;
 import mono.hg.utils.UserUtils;
 import mono.hg.utils.Utils;
 import mono.hg.utils.ViewUtils;
+import mono.hg.views.CustomGridLayoutManager;
 import mono.hg.views.DagashiBar;
 import mono.hg.views.IndeterminateMaterialProgressBar;
 import mono.hg.views.TogglingLinearLayoutManager;
+import mono.hg.wrappers.ItemOffsetDecoration;
 import mono.hg.wrappers.TextSpectator;
 
 public class LauncherActivity extends AppCompatActivity {
@@ -203,10 +204,14 @@ public class LauncherActivity extends AppCompatActivity {
         manager = getPackageManager();
 
         if (PreferenceHelper.useGrid()) {
-            appsLayoutManager = new GridLayoutManager(this, 5);
+            appsLayoutManager = new CustomGridLayoutManager(this,
+                    getResources().getInteger(R.integer.column_default_size));
         } else {
-            appsLayoutManager = new TogglingLinearLayoutManager(this, LinearLayoutManager.VERTICAL, true);
+            appsLayoutManager = new TogglingLinearLayoutManager(this, LinearLayoutManager.VERTICAL,
+                    true);
         }
+
+        ItemOffsetDecoration itemDecoration = new ItemOffsetDecoration(this, R.dimen.item_offset);
 
         final LinearLayoutManager pinnedAppsManager = new LinearLayoutManager(this,
                 LinearLayoutManager.HORIZONTAL, false);
@@ -246,6 +251,9 @@ public class LauncherActivity extends AppCompatActivity {
         appsRecyclerView.setAdapter(appsAdapter);
         appsRecyclerView.setLayoutManager(appsLayoutManager);
         appsRecyclerView.setItemAnimator(new DefaultItemAnimator());
+        if (PreferenceHelper.useGrid()) {
+            appsRecyclerView.addItemDecoration(itemDecoration);
+        }
 
         pinnedAppsRecyclerView.setAdapter(pinnedAppsAdapter);
         pinnedAppsRecyclerView.setLayoutManager(pinnedAppsManager);
@@ -468,6 +476,7 @@ public class LauncherActivity extends AppCompatActivity {
 
                     appMenu.dismiss();
                 }
+
                 break;
             case "show_panel":
                 slidingHome.setPanelState(SlidingUpPanelLayout.PanelState.COLLAPSED,
@@ -823,9 +832,7 @@ public class LauncherActivity extends AppCompatActivity {
 
                 if (!getTrimmedInputText().isEmpty() && PreferenceHelper.promptSearch()) {
                     // HACK: Show a view stub to make sure app list anchors properly.
-                    if (pinnedAppsAdapter.isEmpty()) {
-                        doThis("show_favourites");
-                    }
+                    doThis("show_favourites");
 
                     // Update the snackbar text.
                     searchSnack.setText(searchHint);
@@ -910,7 +917,8 @@ public class LauncherActivity extends AppCompatActivity {
             public void onScrollUp() {
                 if (!pinnedAppsAdapter.isEmpty()
                         && isFavouritesVisible
-                        && PreferenceHelper.favouritesAcceptScroll()) {
+                        && PreferenceHelper.favouritesAcceptScroll()
+                        && searchBar.getText().toString().isEmpty()) {
                     doThis("hide_favourites");
                 }
             }
@@ -1026,9 +1034,6 @@ public class LauncherActivity extends AppCompatActivity {
     private void addPanelListener() {
         slidingHome.addPanelSlideListener(new SlidingUpPanelLayout.PanelSlideListener() {
             @Override public void onPanelSlide(View view, float v) {
-                // Hide the keyboard at slide.
-                ActivityServiceUtils.hideSoftKeyboard(LauncherActivity.this);
-
                 // Dismiss any visible menu.
                 doThis("dismiss_menu");
             }
@@ -1040,16 +1045,10 @@ public class LauncherActivity extends AppCompatActivity {
                 switch (newState) {
                     case SlidingUpPanelLayout.PanelState.DRAGGING:
                         // Empty out search bar text
-
                         // Clear the search bar text if app list is set to be kept open
                         // unless keepLastSearch setting indicates maintain last search
                         if (!PreferenceHelper.keepLastSearch()) {
                             clearSearch(searchBar);
-                        }
-
-                        // Preemptive attempt at showing the keyboard.
-                        if (PreferenceHelper.shouldFocusKeyboard()) {
-                            ActivityServiceUtils.showSoftKeyboard(LauncherActivity.this, searchBar);
                         }
 
                         // Animate search container entering the view.
@@ -1094,6 +1093,15 @@ public class LauncherActivity extends AppCompatActivity {
                             isResuming = false;
                         }
                         break;
+                    case SlidingUpPanelLayout.PanelState.ANCHORED:
+                        // Please don't anchor, we don't want it.
+                        if (previousState != SlidingUpPanelLayout.PanelState.DRAGGING) {
+                            slidingHome.setPanelState(previousState,
+                                    ActivityServiceUtils.isPowerSaving(LauncherActivity.this));
+                        } else {
+                            slidingHome.setPanelState(SlidingUpPanelLayout.PanelState.COLLAPSED,
+                                    ActivityServiceUtils.isPowerSaving(LauncherActivity.this));
+                        }
                     default:
                         // No-op.
                         break;

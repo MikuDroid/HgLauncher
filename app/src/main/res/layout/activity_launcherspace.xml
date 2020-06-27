@@ -51,6 +51,7 @@
                 android:nextFocusDown="@id/search"
                 android:nextFocusForward="@id/search"
                 android:splitMotionEvents="false"
+                android:clipToPadding="false"
                 app:fastScrollPopupBgColor="@color/fastScrollerHold"
                 app:fastScrollThumbColor="@color/fastScrollerHold"
                 app:fastScrollThumbInactiveColor="@color/fastScrollerIdle"
@@ -62,7 +63,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="@dimen/search_bar_size"
                 android:layout_gravity="bottom"
-                android:background="?attr/cardColor"
+                android:background="@drawable/drawable_rounded_edge"
                 android:orientation="horizontal">
 
                 <androidx.recyclerview.widget.RecyclerView

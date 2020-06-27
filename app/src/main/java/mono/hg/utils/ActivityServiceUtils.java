@@ -27,7 +27,7 @@ public class ActivityServiceUtils {
                 Activity.INPUT_METHOD_SERVICE);
         if (inputMethodManager != null && activity.getCurrentFocus() != null) {
             inputMethodManager.hideSoftInputFromWindow(activity.getCurrentFocus().getWindowToken(),
-                    0);
+                    InputMethodManager.HIDE_NOT_ALWAYS);
             activity.getCurrentFocus().clearFocus();
         }
     }
@@ -41,9 +41,13 @@ public class ActivityServiceUtils {
     public static void showSoftKeyboard(Activity activity, View view) {
         InputMethodManager inputMethodManager = (InputMethodManager) activity.getSystemService(
                 Activity.INPUT_METHOD_SERVICE);
-        if (inputMethodManager != null && view.isFocusable()) {
-            inputMethodManager.showSoftInput(view, InputMethodManager.SHOW_IMPLICIT);
+        
+        if (!view.isFocused()) {
             view.requestFocus();
+        }
+
+        if (inputMethodManager != null) {
+            inputMethodManager.toggleSoftInput(InputMethodManager.SHOW_IMPLICIT, 0);
         }
     }
 
