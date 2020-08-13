@@ -10,40 +10,49 @@ import androidx.annotation.Keep
 import androidx.preference.ListPreference
 import androidx.preference.Preference
 import androidx.preference.PreferenceFragmentCompat
+import androidx.preference.PreferenceScreen
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import mono.hg.R
 import mono.hg.utils.AppUtils
 import mono.hg.wrappers.AppSelectionPreferenceDialog
 import java.util.*
 
+/**
+ * Preferences for gestures and their actions.
+ */
 @Keep
 class GesturesPreference : PreferenceFragmentCompat() {
     private lateinit var appListEntries: Array<CharSequence>
     private lateinit var appListEntryValues: Array<CharSequence>
-    private val NestingListListener = Preference.OnPreferenceChangeListener { preference, newValue ->
-        val list = preference as ListPreference
-        when (newValue as String) {
-            "handler" -> list.setSummary(R.string.gesture_action_handler)
-            "widget" -> list.setSummary(R.string.gesture_action_widget)
-            "status" -> list.setSummary(R.string.gesture_action_status)
-            "list" -> list.setSummary(R.string.gesture_action_list)
-            "app" -> {
-                // Create the Bundle to pass to AppSelectionPreferenceDialog.
-                val appListBundle = Bundle()
-                appListBundle.putString("key", list.key)
-                appListBundle.putCharSequenceArray("entries", appListEntries)
-                appListBundle.putCharSequenceArray("entryValues", appListEntryValues)
+    private val NestingListListener =
+        Preference.OnPreferenceChangeListener { preference, newValue ->
+            val list = preference as ListPreference
+            when (newValue as String) {
+                "handler" -> list.setSummary(R.string.gesture_action_handler)
+                "widget" -> list.setSummary(R.string.gesture_action_widget)
+                "status" -> list.setSummary(R.string.gesture_action_status)
+                "panel" -> list.setSummary(R.string.gesture_action_panel)
+                "list" -> list.setSummary(R.string.gesture_action_list)
+                "app" -> {
+                    // Create the Bundle to pass to AppSelectionPreferenceDialog.
+                    val appListBundle = Bundle()
+                    appListBundle.putString("key", list.key)
+                    appListBundle.putCharSequenceArray("entries", appListEntries)
+                    appListBundle.putCharSequenceArray("entryValues", appListEntryValues)
 
-                // Call and create AppSelectionPreferenceDialog.
-                val appList = AppSelectionPreferenceDialog()
-                appList.setTargetFragment(this@GesturesPreference, APPLICATION_DIALOG_CODE)
-                appList.arguments = appListBundle
-                appList.show(requireFragmentManager(), "AppSelectionDialog")
+                    // Call and create AppSelectionPreferenceDialog.
+                    val appList = AppSelectionPreferenceDialog()
+                    appList.setTargetFragment(this@GesturesPreference, APPLICATION_DIALOG_CODE)
+                    appList.arguments = appListBundle
+                    appList.show(requireActivity().supportFragmentManager, "AppSelectionDialog")
+                }
+                "none" -> list.setSummary(R.string.gesture_action_default)
+                else -> list.setSummary(R.string.gesture_action_default)
             }
-            "none" -> list.setSummary(R.string.gesture_action_default)
-            else -> list.setSummary(R.string.gesture_action_default)
+            true
         }
-        true
-    }
 
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
         setPreferencesFromResource(R.xml.pref_gestures, rootKey)
@@ -51,45 +60,47 @@ class GesturesPreference : PreferenceFragmentCompat() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        val prefScreen: PreferenceScreen = preferenceScreen
+        val prefCount: Int = prefScreen.preferenceCount
+
         appList
-        val gestureLeftList = findPreference<ListPreference>("gesture_left")
-        val gestureRightList = findPreference<ListPreference>("gesture_right")
-        val gestureDownList = findPreference<ListPreference>("gesture_down")
-        val gestureUpList = findPreference<ListPreference>("gesture_up")
-        val gestureTapList = findPreference<ListPreference>("gesture_single_tap")
-        val gestureDoubleTapList = findPreference<ListPreference>("gesture_double_tap")
-        val gesturePinchList = findPreference<ListPreference>("gesture_pinch")
-        val gestureHandlerList = findPreference<ListPreference>("gesture_handler")
-        setNestedListSummary(gestureLeftList)
-        setNestedListSummary(gestureRightList)
-        setNestedListSummary(gestureDownList)
-        setNestedListSummary(gestureUpList)
-        setNestedListSummary(gestureTapList)
-        setNestedListSummary(gestureDoubleTapList)
-        setNestedListSummary(gesturePinchList)
-        setGestureHandlerList(gestureHandlerList)
-        gestureLeftList!!.onPreferenceChangeListener = NestingListListener
-        gestureRightList!!.onPreferenceChangeListener = NestingListListener
-        gestureDownList!!.onPreferenceChangeListener = NestingListListener
-        gestureUpList!!.onPreferenceChangeListener = NestingListListener
-        gestureDoubleTapList!!.onPreferenceChangeListener = NestingListListener
-        gestureTapList!!.onPreferenceChangeListener = NestingListListener
-        gesturePinchList!!.onPreferenceChangeListener = NestingListListener
+
+        // We can safely iterate through all the preferences and assume they're ListPreference
+        // because GesturesPreference has nothing else aside from that.
+        for (i in 0 until prefCount) {
+            prefScreen.getPreference(i).apply {
+                setNestedListSummary(this as ListPreference)
+                this.onPreferenceChangeListener = NestingListListener
+            }
+        }
+
+        if (isVisible) {
+            setGestureHandlerList(findPreference("gesture_handler"))
+        }
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         if (requestCode == APPLICATION_DIALOG_CODE && data != null) {
             if (resultCode == Activity.RESULT_CANCELED) {
                 val key = data.getStringExtra("key")
-                val preference = findPreference<ListPreference>(key)
-                preference?.setSummary(R.string.gesture_action_default)
-                preference?.value = getString(R.string.gesture_action_default_value)
+                if (key !== null) {
+                    findPreference<ListPreference>(key).let {
+                        it?.setSummary(R.string.gesture_action_default)
+                        it?.value = getString(R.string.gesture_action_default_value)
+                    }
+                }
             } else if (resultCode == Activity.RESULT_OK) {
                 val key = data.getStringExtra("key")
-                val app = AppUtils.getPackageLabel(requireActivity().packageManager,
-                        data.getStringExtra("app"))
-                val preference = findPreference<ListPreference>(key)
-                preference!!.summary = app
+                val app = data.getStringExtra("app")?.let {
+                    AppUtils.getPackageLabel(
+                        requireActivity().packageManager,
+                        it
+                    )
+                }
+
+                if (key != null) {
+                    findPreference<ListPreference>(key)?.summary = app
+                }
             }
         }
     }
@@ -105,21 +116,23 @@ class GesturesPreference : PreferenceFragmentCompat() {
 
         // Fetch all available icon pack.
         val intent = Intent("mono.hg.GESTURE_HANDLER")
-        val info = manager.queryIntentActivities(intent,
-                PackageManager.GET_RESOLVED_FILTER)
-        info.forEach {
-            val activityInfo = it.activityInfo
-            val className = activityInfo.name
-            val packageName = activityInfo.packageName
-            val componentName = "$packageName/$className"
-            val appName = activityInfo.loadLabel(manager).toString()
-            entries.add(appName)
-            entryValues.add(componentName)
+
+        CoroutineScope(Dispatchers.Default).launch {
+            manager.queryIntentActivities(intent, PackageManager.GET_RESOLVED_FILTER)
+                .forEach {
+                    with(it.activityInfo) {
+                        val className = this.name
+                        val packageName = this.packageName
+                        val componentName = "$packageName/$className"
+                        val appName = loadLabel(manager).toString()
+                        entries.add(appName)
+                        entryValues.add(componentName)
+                    }
+                }
+
+            list?.entries = entries.toTypedArray()
+            list?.entryValues = entryValues.toTypedArray()
         }
-        val finalEntries = entries.toTypedArray<CharSequence>()
-        val finalEntryValues = entryValues.toTypedArray<CharSequence>()
-        list!!.entries = finalEntries
-        list.entryValues = finalEntryValues
     }
 
     // Fetch apps and feed it into our list.
@@ -132,26 +145,32 @@ class GesturesPreference : PreferenceFragmentCompat() {
             // Get default value.
             entries.add(getString(R.string.gesture_action_default))
             entryValues.add(getString(R.string.gesture_action_default_value))
+
             val intent = Intent(Intent.ACTION_MAIN, null)
             intent.addCategory(Intent.CATEGORY_LAUNCHER)
-            val availableActivities = manager.queryIntentActivities(intent, 0)
-            Collections.sort(availableActivities, ResolveInfo.DisplayNameComparator(manager))
-
-            // Fetch apps and feed it into our list.
-            availableActivities.forEach {
-                val appName = it.loadLabel(manager).toString()
-                val packageName = it.activityInfo.packageName + "/" + it.activityInfo.name
-                entries.add(appName)
-                entryValues.add(packageName)
+            manager.queryIntentActivities(intent, 0).apply {
+                sortWith(ResolveInfo.DisplayNameComparator(manager))
+            }.also {
+                // Fetch apps and feed it into our list.
+                it.forEach { resolveInfo ->
+                    val appName = resolveInfo.loadLabel(manager).toString()
+                    val packageName =
+                        resolveInfo.activityInfo.packageName + "/" + resolveInfo.activityInfo.name
+                    entries.add(appName)
+                    entryValues.add(packageName)
+                }
             }
+
             appListEntries = entries.toTypedArray()
             appListEntryValues = entryValues.toTypedArray()
         }
 
-    private fun setNestedListSummary(list: ListPreference?) {
-        if (list!!.value.contains("/")) {
-            list.summary = AppUtils.getPackageLabel(requireActivity().packageManager,
-                    list.value)
+    private fun setNestedListSummary(list: ListPreference) {
+        if (list.value.contains("/")) {
+            list.summary = AppUtils.getPackageLabel(
+                requireActivity().packageManager,
+                list.value
+            )
         }
     }
 

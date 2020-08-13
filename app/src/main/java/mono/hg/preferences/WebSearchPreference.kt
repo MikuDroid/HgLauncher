@@ -9,6 +9,10 @@ import mono.hg.R
 import mono.hg.helpers.PreferenceHelper
 import java.util.*
 
+/**
+ * Preferences for web search settings. This preference does not host the web search list,
+ * see [WebSearchProviderPreference] for that.
+ */
 @Keep
 class WebSearchPreference : PreferenceFragmentCompat() {
     private var providerList: ListPreference? = null
@@ -33,6 +37,7 @@ class WebSearchPreference : PreferenceFragmentCompat() {
     private fun setProviderList(list: ListPreference?) {
         val entries: MutableList<String?> = ArrayList()
         val entryValues: MutableList<String?> = ArrayList()
+
         entries.add(getString(R.string.search_provider_none))
         entryValues.add(getString(R.string.gesture_action_default_value))
 
@@ -42,9 +47,7 @@ class WebSearchPreference : PreferenceFragmentCompat() {
             entryValues.add(it.key)
         }
 
-        val finalEntries = entries.toTypedArray<CharSequence?>()
-        val finalEntryValues = entryValues.toTypedArray<CharSequence?>()
-        list!!.entries = finalEntries
-        list.entryValues = finalEntryValues
+        list?.entries = entries.toTypedArray()
+        list?.entryValues = entryValues.toTypedArray()
     }
 }

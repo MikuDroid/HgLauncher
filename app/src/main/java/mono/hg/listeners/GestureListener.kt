@@ -22,15 +22,26 @@ open class GestureListener protected constructor(context: Context?) : OnTouchLis
     private val gestureDetector: GestureDetector
     private val scaleDetector: ScaleGestureDetector
 
+    /**
+     * Action done when a long press is detected.
+     */
     open fun onLongPress() {
         // Do long press action.
     }
 
+    /**
+     * Action done when a gesture is detected.
+     *
+     * @param direction The direction of the gesture.
+     *
+     * @see Utils.Gesture for the complete list of possible directions.
+     */
     open fun onGesture(direction: Int) {
         // Do generic gesture action.
     }
 
     override fun onTouch(v: View, event: MotionEvent): Boolean {
+        v.performClick()
         return gestureDetector.onTouchEvent(event) || scaleDetector.onTouchEvent(event)
     }
 
@@ -63,17 +74,28 @@ open class GestureListener protected constructor(context: Context?) : OnTouchLis
             this@GestureListener.onLongPress()
         }
 
-        override fun onFling(e1: MotionEvent, e2: MotionEvent, velocityX: Float, velocityY: Float): Boolean {
+        override fun onFling(
+            e1: MotionEvent,
+            e2: MotionEvent,
+            velocityX: Float,
+            velocityY: Float
+        ): Boolean {
             val distanceX = e2.x - e1.x
             val distanceY = e2.y - e1.y
-            if (abs(distanceX) > abs(distanceY) && abs(distanceX) > Companion.SWIPE_DISTANCE_THRESHOLD && abs(velocityX) > Companion.SWIPE_VELOCITY_THRESHOLD) {
+            if (abs(distanceX) > abs(distanceY) && abs(distanceX) > Companion.SWIPE_DISTANCE_THRESHOLD && abs(
+                    velocityX
+                ) > Companion.SWIPE_VELOCITY_THRESHOLD
+            ) {
                 if (distanceX > 0) {
                     onGesture(Utils.Gesture.RIGHT)
                 } else {
                     onGesture(Utils.Gesture.LEFT)
                 }
                 return true
-            } else if (abs(distanceY) > abs(distanceX) && abs(distanceY) > Companion.SWIPE_DISTANCE_THRESHOLD && abs(velocityX) > Companion.SWIPE_VELOCITY_THRESHOLD) {
+            } else if (abs(distanceY) > abs(distanceX) && abs(distanceY) > Companion.SWIPE_DISTANCE_THRESHOLD && abs(
+                    velocityX
+                ) > Companion.SWIPE_VELOCITY_THRESHOLD
+            ) {
                 if (distanceY > 0) {
                     onGesture(Utils.Gesture.DOWN)
                 } else {

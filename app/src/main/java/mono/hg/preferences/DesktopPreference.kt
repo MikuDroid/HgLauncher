@@ -9,10 +9,13 @@ import androidx.preference.PreferenceFragmentCompat
 import mono.hg.R
 import mono.hg.utils.Utils
 
+/**
+ * Preferences for the desktop/main view of the launcher.
+ */
 @Keep
 class DesktopPreference : PreferenceFragmentCompat() {
     private val RotatingListListener = Preference.OnPreferenceChangeListener { _, newValue ->
-        requireActivity().requestedOrientation = newValue as Int
+        requireActivity().requestedOrientation = Integer.parseInt(newValue as String)
         true
     }
 
@@ -22,8 +25,8 @@ class DesktopPreference : PreferenceFragmentCompat() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        val orientationMode = findPreference<ListPreference>("orientation_mode")
-        orientationMode!!.onPreferenceChangeListener = RotatingListListener
+        findPreference<ListPreference>("orientation_mode")?.onPreferenceChangeListener =
+            RotatingListListener
 
         // Window bar hiding works only reliably in KitKat and above.
         if (Utils.atLeastKitKat()) {

@@ -1,20 +1,24 @@
 package mono.hg.adapters
 
 import android.content.Context
+import android.content.res.ColorStateList
 import android.graphics.Typeface
 import android.view.View
 import android.view.ViewGroup
 import android.widget.BaseAdapter
 import android.widget.ImageView
 import android.widget.TextView
+import androidx.core.widget.ImageViewCompat
 import mono.hg.R
+import mono.hg.helpers.PreferenceHelper
 import mono.hg.models.App
 import java.util.*
 
 /**
  * Adapter handling display of hidden apps. Only used in preferences.
  */
-class HiddenAppAdapter(private val hiddenAppsList: ArrayList<App>, private val context: Context) : BaseAdapter() {
+class HiddenAppAdapter(private val hiddenAppsList: ArrayList<App>, private val context: Context) :
+    BaseAdapter() {
     override fun getView(position: Int, convertView: View?, parent: ViewGroup): View? {
         val appHolder: ViewHolder
         var view = convertView
@@ -32,9 +36,16 @@ class HiddenAppAdapter(private val hiddenAppsList: ArrayList<App>, private val c
         appHolder.name?.text = hiddenAppsList[position].appName
         if (hiddenAppsList[position].isAppHidden) {
             appHolder.icon?.setImageResource(R.drawable.ic_check)
+            appHolder.icon?.let {
+                ImageViewCompat.setImageTintList(
+                    it,
+                    ColorStateList.valueOf(PreferenceHelper.accent)
+                )
+            }
             appHolder.name?.typeface = Typeface.DEFAULT_BOLD
         } else {
             appHolder.icon?.setImageDrawable(hiddenAppsList[position].icon)
+            appHolder.icon?.let { ImageViewCompat.setImageTintList(it, null) }
             appHolder.name?.typeface = Typeface.DEFAULT
         }
         return view
@@ -49,7 +60,7 @@ class HiddenAppAdapter(private val hiddenAppsList: ArrayList<App>, private val c
     }
 
     override fun getItemId(position: Int): Long {
-        return position.toLong()
+        return getItem(position).hashCode().toLong()
     }
 
     override fun hasStableIds(): Boolean {

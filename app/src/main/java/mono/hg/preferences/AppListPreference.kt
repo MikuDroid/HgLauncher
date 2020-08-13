@@ -9,23 +9,34 @@ import androidx.preference.ListPreference
 import androidx.preference.Preference
 import androidx.preference.PreferenceFragmentCompat
 import mono.hg.R
+import mono.hg.helpers.PreferenceHelper
 import mono.hg.utils.Utils
 import java.util.*
 
+/**
+ * Preferences for app lists and the view surrounding it.
+ */
 @Keep
 class AppListPreference : PreferenceFragmentCompat() {
+    val RestartingListListener = Preference.OnPreferenceChangeListener { _, _ ->
+        PreferenceHelper.update("require_refresh", true)
+        true
+    }
+
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
         setPreferencesFromResource(R.xml.pref_app_list, rootKey)
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        val iconList = findPreference<ListPreference>("icon_pack")
-        setIconList(iconList)
+        findPreference<ListPreference>("icon_pack").apply {
+            this?.onPreferenceChangeListener = RestartingListListener
+            setIconList(this)
+        }
 
         // Adaptive icon is not available before Android O/API 26.
         if (Utils.atLeastOreo()) {
-            findPreference<Preference>("adaptive_shade_switch")!!.isVisible = true
+            findPreference<Preference>("adaptive_shade_switch") !!.isVisible = true
         }
     }
 
@@ -40,18 +51,16 @@ class AppListPreference : PreferenceFragmentCompat() {
 
         // Fetch all available icon pack.
         val intent = Intent("org.adw.launcher.THEMES")
-        val info = manager.queryIntentActivities(intent,
-                PackageManager.GET_META_DATA)
-        info.forEach {
-            val activityInfo = it.activityInfo
-            val packageName = activityInfo.packageName
-            val appName = activityInfo.loadLabel(manager).toString()
-            entries.add(appName)
-            entryValues.add(packageName)
+        manager.queryIntentActivities(intent, PackageManager.GET_META_DATA).forEach {
+            with(it.activityInfo) {
+                val packageName = this.packageName
+                val appName = loadLabel(manager).toString()
+                entries.add(appName)
+                entryValues.add(packageName)
+            }
         }
-        val finalEntries = entries.toTypedArray<CharSequence>()
-        val finalEntryValues = entryValues.toTypedArray<CharSequence>()
-        list!!.entries = finalEntries
-        list.entryValues = finalEntryValues
+
+        list?.entries = entries.toTypedArray()
+        list?.entryValues = entryValues.toTypedArray()
     }
 }

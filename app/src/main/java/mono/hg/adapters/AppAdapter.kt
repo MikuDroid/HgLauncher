@@ -5,7 +5,9 @@ import android.view.View
 import androidx.recyclerview.widget.RecyclerView
 import com.simplecityapps.recyclerview_fastscroll.views.FastScrollRecyclerView.SectionedAdapter
 import eu.davidea.flexibleadapter.FlexibleAdapter
+import eu.davidea.flexibleadapter.FlexibleAdapter.OnItemClickListener
 import mono.hg.models.App
+import mono.hg.utils.AppUtils
 import mono.hg.utils.Utils
 import java.util.*
 
@@ -13,10 +15,13 @@ import java.util.*
  * Adapter used to handle generic list of apps.
  * Implements [SectionedAdapter] allowing fast-scroll seeking with sections.
  */
-class AppAdapter(apps: List<App?>?) : FlexibleAdapter<App?>(apps), SectionedAdapter {
+class AppAdapter(apps: List<App?>, listeners: Any?, stableIds: Boolean) :
+    FlexibleAdapter<App>(apps, listeners, stableIds), SectionedAdapter {
     private var mSelectedItem = 0
     private lateinit var adapterRecyclerView: RecyclerView
     private var finishedLoading = false
+
+    constructor(apps: List<App?>) : this(apps, null, true)
 
     /**
      * Resets the current filter, as well as the filtered items.
@@ -32,8 +37,12 @@ class AppAdapter(apps: List<App?>?) : FlexibleAdapter<App?>(apps), SectionedAdap
         }
     }
 
+    override fun getItemId(position: Int): Long {
+        return getItem(position)?.hashCode() !!.toLong()
+    }
+
     override fun getSectionName(position: Int): String {
-        return getItem(position)?.appName!!.substring(0, 1).toUpperCase(Locale.getDefault())
+        return getItem(position)?.appName !!.substring(0, 1).toUpperCase(Locale.getDefault())
     }
 
     /**
@@ -58,12 +67,14 @@ class AppAdapter(apps: List<App?>?) : FlexibleAdapter<App?>(apps), SectionedAdap
                         if (isDown(keyCode)) {
                             return@OnKeyListener tryMoveSelection(1)
                         } else if (isUp(keyCode)) {
-                            return@OnKeyListener tryMoveSelection(-1)
+                            return@OnKeyListener tryMoveSelection(- 1)
                         }
                     }
                 } else if (event.action == KeyEvent.ACTION_UP && isConfirmButton(event)
-                        && event.flags and KeyEvent.FLAG_LONG_PRESS != KeyEvent.FLAG_LONG_PRESS
-                        && mSelectedItem != -1) { recyclerView.findViewHolderForAdapterPosition(mSelectedItem)?.itemView?.performClick()
+                    && event.flags and KeyEvent.FLAG_LONG_PRESS != KeyEvent.FLAG_LONG_PRESS
+                    && mSelectedItem != - 1
+                ) {
+                    recyclerView.findViewHolderForAdapterPosition(mSelectedItem)?.itemView?.performClick()
                     return@OnKeyListener true
                 }
                 false
@@ -123,5 +134,12 @@ class AppAdapter(apps: List<App?>?) : FlexibleAdapter<App?>(apps), SectionedAdap
                 else -> false
             }
         }
+    }
+
+    init {
+        addListener(OnItemClickListener { _, position ->
+            getItem(position)?.let { AppUtils.launchApp(recyclerView.context, it) }
+            true
+        })
     }
 }

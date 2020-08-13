@@ -1,12 +1,13 @@
 package mono.hg.helpers
 
+import android.annotation.SuppressLint
 import android.content.ComponentName
 import android.content.Context
 import android.content.SharedPreferences
 import android.content.SharedPreferences.Editor
 import android.graphics.Color
-import androidx.preference.PreferenceManager
 import androidx.core.graphics.ColorUtils
+import androidx.preference.PreferenceManager
 import mono.hg.models.WebSearchProvider
 import mono.hg.utils.Utils
 import java.util.*
@@ -66,7 +67,7 @@ object PreferenceHelper {
         private set
     private var widgets_list: ArrayList<String> = ArrayList()
     lateinit var preference: SharedPreferences
-    private set
+        private set
     var editor: Editor? = null
         private set
     var gestureHandler: ComponentName? = null
@@ -84,7 +85,7 @@ object PreferenceHelper {
     }
 
     val isListInverted: Boolean
-        get() = !list_order
+        get() = ! list_order
 
     fun useWallpaperShade(): Boolean {
         return shade_view
@@ -111,7 +112,7 @@ object PreferenceHelper {
     }
 
     fun favouritesAcceptScroll(): Boolean {
-        return !static_favourites_panel
+        return ! static_favourites_panel
     }
 
     fun keepAppList(): Boolean {
@@ -152,11 +153,7 @@ object PreferenceHelper {
     }
 
     val searchProvider: String?
-        get() = if ("none" == search_provider_set) {
-            "none"
-        } else {
-            getProvider(search_provider_set)
-        }
+        get() = if ("none" == search_provider_set) "none" else getProvider(search_provider_set)
 
     fun getDefaultProvider(provider_id: String?): String {
         return when (provider_id) {
@@ -173,25 +170,23 @@ object PreferenceHelper {
         return editor != null
     }
 
+    @SuppressLint("CommitPrefEdits")
     fun initPreference(context: Context?) {
         preference = PreferenceManager.getDefaultSharedPreferences(context)
         editor = preference.edit()
 
         // Initialise widgets early on.
-        preference.getString("widgets_list", "")!!.split(";".toRegex()).toTypedArray().forEach{ if (it.isNotEmpty()) { widgets_list.add(it) } }
+        preference.getString("widgets_list", "") !!.split(";")
+            .filterTo(widgets_list) { it.isNotEmpty() }
     }
 
-    private fun parseDelimitedSet(set: HashSet<String>?, map: MutableMap<String, String>) {
-        var toParse: Array<String>
-        set!!.forEach {
-            toParse = it.split("\\|".toRegex()).toTypedArray()
-            map[toParse[0]] = toParse[1]
-        }
+    private fun parseDelimitedSet(set: HashSet<String>, map: MutableMap<String, String>) {
+        set.forEach { it.split("|").apply { map[this[0]] = this[1] } }
     }
 
     fun updateProvider(list: ArrayList<WebSearchProvider>) {
         val tempList = HashSet<String>()
-        list.forEach { tempList.add(it.name + "|" + it.url) }
+        list.mapTo(tempList) { "${it.name}|${it.url}" }
         update("provider_list", tempList)
 
         // Clear and update our Map.
@@ -200,16 +195,15 @@ object PreferenceHelper {
     }
 
     fun getProvider(id: String?): String? {
-        return if (providerList.containsKey(id)) {
-            provider_list[id]
-        } else {
-            // Whoops.
-            "none"
-        }
+        return provider_list[id] ?: "none"
     }
 
-    private fun updateSeparatedSet(pref_id: String, map: Map<String, String>, set: HashSet<String>) {
-        map.forEach { set.add("$it.key|$it.value") }
+    private fun updateSeparatedSet(
+        pref_id: String,
+        map: Map<String, String>,
+        set: HashSet<String>
+    ) {
+        map.mapTo(set) { "${it.key}|${it.value}" }
         update(pref_id, set)
     }
 
@@ -230,13 +224,7 @@ object PreferenceHelper {
     }
 
     fun updateWidgets(list: ArrayList<String>) {
-        var tempList = ""
-        list.forEach {
-            if (it.isNotEmpty()) {
-                tempList = tempList.plus(";").plus(it)
-            }
-        }
-        update("widgets_list", tempList)
+        update("widgets_list", list.filter { it.isNotEmpty() }.joinToString(";"))
     }
 
     fun update(id: String?, stringSet: HashSet<String>?) {
@@ -259,7 +247,7 @@ object PreferenceHelper {
         isTesting = preference.getBoolean("is_grandma", false)
         isNewUser = preference.getBoolean("is_new_user", true)
         launchAnim = preference.getString("launch_anim", "default")
-        orientation = preference.getString("orientation_mode", "-1")!!.toInt()
+        orientation = preference.getString("orientation_mode", "-1") !!.toInt()
         icon_hide = preference.getBoolean("icon_hide_switch", false)
         iconPackName = preference.getString("icon_pack", "default")
         list_order = (preference.getString("list_order", "alphabetical")
@@ -268,14 +256,16 @@ object PreferenceHelper {
         shade_view = preference.getBoolean("shade_view_switch", false)
         keyboard_focus = preference.getBoolean("keyboard_focus", false)
         app_theme = preference.getString("app_theme", "light")
-        accent = preference.getInt("app_accent", -49023) // The default accent in Int.
+        accent = preference.getInt("app_accent", - 49023) // The default accent in Int.
         darkAccent = ColorUtils.blendARGB(accent, Color.BLACK, 0.25f)
         darkerAccent = ColorUtils.blendARGB(accent, Color.BLACK, 0.4f)
         web_search_enabled = preference.getBoolean("web_search_enabled", true)
         web_search_long_press = preference.getBoolean("web_search_long_press", false)
         search_provider_set = preference.getString("search_provider", "none")
-        static_favourites_panel = preference.getBoolean("static_favourites_panel_switch",
-                false)
+        static_favourites_panel = preference.getBoolean(
+            "static_favourites_panel_switch",
+            false
+        )
         static_app_list = preference.getBoolean("static_app_list_switch", false)
         keep_last_search = preference.getBoolean("keep_last_search_switch", false)
         adaptive_shade = preference.getBoolean("adaptive_shade_switch", false)
@@ -290,10 +280,14 @@ object PreferenceHelper {
         gesture_double_tap_action = preference.getString("gesture_double_tap", "none")
         gesture_pinch_action = preference.getString("gesture_pinch", "none")
         gestureHandler = ComponentName.unflattenFromString(
-                preference.getString("gesture_handler", "none")!!)
+            preference.getString("gesture_handler", "none") !!
+        )
         exclusionList = preference.getStringSet("hidden_apps", HashSet()) as HashSet<String>
         val tempLabelList = preference.getStringSet("label_list", HashSet()) as HashSet<String>
-        parseDelimitedSet(preference.getStringSet("provider_list", HashSet()) as HashSet<String>, provider_list)
+        parseDelimitedSet(
+            preference.getStringSet("provider_list", HashSet()) as HashSet<String>,
+            provider_list
+        )
         label_list_set.addAll(tempLabelList)
         parseDelimitedSet(label_list_set, label_list)
     }

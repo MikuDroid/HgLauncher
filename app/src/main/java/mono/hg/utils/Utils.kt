@@ -21,9 +21,6 @@ import mono.hg.R
 import mono.hg.helpers.PreferenceHelper
 import mono.hg.models.WebSearchProvider
 import mono.hg.receivers.PackageChangesReceiver
-import java.io.Closeable
-import java.io.IOException
-import java.util.*
 
 /**
  * A misc. utils class for other various helpers and utilities functions.
@@ -31,7 +28,7 @@ import java.util.*
 object Utils {
     /**
      * Sends log using a predefined tag. This is used to better debug or to catch errors.
-     * Logging should always use sendLog to coalesce logs into one single place.
+     * Logging should always use sendLog to coalesce logs into one single source.
      *
      * @param level   Urgency level of the log to send. 3 is the ceiling and will
      * send errors. Defaults to debug message when the level is invalid.
@@ -116,14 +113,12 @@ object Utils {
     }
 
     /**
-     * Opens a URL/link from a string object.
+     * Checks whether the system is at least R.
      *
-     * @param context Context object for use with startActivity.
-     * @param link    The link to be opened.
+     * @return True when the system SDK is equal to or more than 30 (R).
      */
-    fun openLink(context: Context, link: String?) {
-        val linkIntent = Intent(Intent.ACTION_VIEW, Uri.parse(link))
-        context.startActivity(linkIntent)
+    fun atLeastR(): Boolean {
+        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
     }
 
     /**
@@ -133,20 +128,9 @@ object Utils {
      * @param provider The URL of the provider
      * @param query    The query itself
      */
-    fun doWebSearch(context: Context, provider: String?, query: String?) {
-        openLink(context, provider!!.replace("%s", query!!))
-    }
-
-    /**
-     * Closes a Closeable instance if it is not null.
-     *
-     * @param stream The Closeable instance to close.
-     */
-    fun closeStream(stream: Closeable?) {
-        try {
-            stream?.close()
-        } catch (ignored: IOException) {
-            // Do nothing.
+    fun doWebSearch(context: Context, provider: String, query: String) {
+        with(Intent(Intent.ACTION_VIEW, Uri.parse(provider.replace("%s", query)))) {
+            context.startActivity(this)
         }
     }
 
@@ -160,35 +144,51 @@ object Utils {
      */
     @ColorInt
     fun getColorFromAttr(context: Context, @AttrRes attr: Int): Int {
-        val typedValue = TypedValue()
-        val theme = context.theme
-        theme.resolveAttribute(attr, typedValue, true)
-        return typedValue.data
+        with(TypedValue()) {
+            context.theme.resolveAttribute(attr, this, true)
+            return this.data
+        }
     }
 
     /**
      * Registers a PackageChangesReceiver on an activity.
      *
+     * This function does not check the availability or the
+     * nullity of the package receiver. It is recommended that before
+     * calling this function, a check is performed first.
+     *
      * @param activity        The activity where PackageChangesReceiver is to be registered.
      * @param packageReceiver The receiver itself.
      */
-    fun registerPackageReceiver(activity: AppCompatActivity, packageReceiver: PackageChangesReceiver?) {
-        val intentFilter = IntentFilter()
-        intentFilter.addAction(Intent.ACTION_PACKAGE_ADDED)
-        intentFilter.addAction(Intent.ACTION_PACKAGE_REMOVED)
-        intentFilter.addAction(Intent.ACTION_PACKAGE_REPLACED)
-        intentFilter.addAction(Intent.ACTION_PACKAGE_CHANGED)
-        intentFilter.addDataScheme("package")
-        activity.registerReceiver(packageReceiver, intentFilter)
+    fun registerPackageReceiver(
+        activity: AppCompatActivity,
+        packageReceiver: PackageChangesReceiver?
+    ) {
+        IntentFilter().apply {
+            addAction(Intent.ACTION_PACKAGE_ADDED)
+            addAction(Intent.ACTION_PACKAGE_REMOVED)
+            addAction(Intent.ACTION_PACKAGE_REPLACED)
+            addAction(Intent.ACTION_PACKAGE_CHANGED)
+            addDataScheme("package")
+        }.also {
+            activity.registerReceiver(packageReceiver, it)
+        }
     }
 
     /**
      * Unregisters a PackageChangesReceiver from an activity.
      *
+     * This function should be called when the receiver in question
+     * exists and have not been destroyed/removed by the system. Otherwise,
+     * there is a risk of exceptions arising, not handled by this function.
+     *
      * @param activity        The activity where PackageChangesReceiver is to be registered.
      * @param packageReceiver The receiver itself.
      */
-    fun unregisterPackageReceiver(activity: AppCompatActivity, packageReceiver: PackageChangesReceiver?) {
+    fun unregisterPackageReceiver(
+        activity: AppCompatActivity,
+        packageReceiver: PackageChangesReceiver?
+    ) {
         try {
             activity.unregisterReceiver(packageReceiver)
         } catch (w: IllegalArgumentException) {
@@ -199,94 +199,137 @@ object Utils {
     /**
      * Handles gesture actions based on the direction of the gesture.
      *
-     * @param activity  The activity where the gesture is performed.
+     * @param activity  Instance of LauncheActivity.
      * @param direction The direction of the gesture.
      *
      * @see Gesture Valid directions for the gestures.
      */
-    fun handleGestureActions(activity: AppCompatActivity, direction: Int) {
+    fun handleGestureActions(activity: LauncherActivity, direction: Int) {
         when (PreferenceHelper.getGestureForDirection(direction)) {
             "handler" -> if (PreferenceHelper.gestureHandler != null) {
-                val handlerIntent = Intent("mono.hg.GESTURE_HANDLER")
-                handlerIntent.component = PreferenceHelper.gestureHandler
-                handlerIntent.type = "text/plain"
-                handlerIntent.putExtra("direction", direction)
-                activity.startActivity(handlerIntent)
+                Intent("mono.hg.GESTURE_HANDLER").apply {
+                    component = PreferenceHelper.gestureHandler
+                    type = "text/plain"
+                    putExtra("direction", direction)
+                }.also {
+                    activity.startActivity(it)
+                }
             }
-            "widget" -> (activity as LauncherActivity).doThis("open_widgets") // TODO: Definitely make this less reliant on LauncherActivity.
+            "widget" -> activity.doThis("open_widgets")
             "status" -> ActivityServiceUtils.expandStatusBar(activity)
             "panel" -> ActivityServiceUtils.expandSettingsPanel(activity)
-            "list" -> (activity as LauncherActivity).doThis("show_panel") // TODO: Maybe make this call less reliant on LauncherActivity?
+            "list" -> activity.doThis("show_panel")
             "none" -> {
             }
             else -> try {
-                AppUtils.quickLaunch(activity,
-                        PreferenceHelper.getGestureForDirection(direction))
+                AppUtils.quickLaunch(
+                    activity,
+                    PreferenceHelper.getGestureForDirection(direction)
+                )
             } catch (w: ActivityNotFoundException) {
                 // Maybe the user had an old configuration, but otherwise, this is harmless.
                 // We should still notify them though.
-                Toast.makeText(activity, activity.getString(R.string.err_activity_null), Toast.LENGTH_LONG).show()
+                Toast.makeText(
+                    activity,
+                    activity.getString(R.string.err_activity_null),
+                    Toast.LENGTH_LONG
+                ).show()
             }
         }
     }
 
     /**
-     * Handles common input shortcut from an EditText.
+     * Handles common input shortcuts from an EditText.
+     *
+     * The input shortcut currently defined are:
+     * * Select All (CTRL+A)
+     * * Copy (CTRL+C)
+     * * Paste (CTRL+V)
+     * * Cut (CTRL+X)
+     *
+     * The shortcuts here may be overridden by the system, as such
+     * it is best if there is a check for such cases.
      *
      * @param activity The activity to reference for copying and pasting.
      * @param editText The EditText where the text is being copied/pasted.
      * @param keyCode  Keycode to handle.
      *
-     * @return True if key is handled.
+     * @return Boolean True if key is handled.
      */
-    fun handleInputShortcut(activity: AppCompatActivity, editText: EditText, keyCode: Int): Boolean? {
+    fun handleInputShortcut(
+        activity: AppCompatActivity,
+        editText: EditText,
+        keyCode: Int
+    ): Boolean? {
         // Get selected text for cut and copy.
-        val start = editText.selectionStart
-        val end = editText.selectionEnd
-        val text = editText.text.toString().substring(start, end)
-        return when (keyCode) {
-            KeyEvent.KEYCODE_A -> {
-                editText.selectAll()
-                true
-            }
-            KeyEvent.KEYCODE_X -> {
-                editText.setText(editText.text.toString().replace(text, ""))
-                true
-            }
-            KeyEvent.KEYCODE_C -> {
-                ActivityServiceUtils.copyToClipboard(activity, text)
-                true
-            }
-            KeyEvent.KEYCODE_V -> {
-                editText.text = editText.text.replace(start.coerceAtMost(end), start.coerceAtLeast(end),
+        with(editText) {
+            val text = editText.text.toString().substring(selectionStart, selectionEnd)
+            return when (keyCode) {
+                KeyEvent.KEYCODE_A -> {
+                    selectAll()
+                    true
+                }
+                KeyEvent.KEYCODE_X -> {
+                    ActivityServiceUtils.copyToClipboard(activity, text)
+                    setText(this.text.toString().replace(text, ""))
+                    true
+                }
+                KeyEvent.KEYCODE_C -> {
+                    ActivityServiceUtils.copyToClipboard(activity, text)
+                    true
+                }
+                KeyEvent.KEYCODE_V -> {
+                    this.text = this.text.replace(
+                        selectionStart.coerceAtMost(selectionEnd),
+                        selectionStart.coerceAtLeast(selectionEnd),
                         ActivityServiceUtils.pasteFromClipboard(activity), 0,
-                        ActivityServiceUtils.pasteFromClipboard(activity).length)
-                true
+                        ActivityServiceUtils.pasteFromClipboard(activity).length
+                    )
+                    true
+                }
+                else ->
+                    // Do nothing.
+                    false
             }
-            else ->
-                // Do nothing.
-                false
         }
     }
 
     /**
-     * Set default providers for indeterminate search.
+     * Set default (starting) providers for indeterminate search.
+     *
+     * This function is always called when the provider list is empty
+     * to prevent the user from seeing an empty provider selection.
+     *
+     * @see [R.array.pref_search_provider_title]
+     *
+     * @param resources The resources object, used to retrieve the default array.
      */
-    fun setDefaultProviders(resources: Resources) {
+    fun setDefaultProviders(
+        resources: Resources,
+        list: ArrayList<WebSearchProvider>
+    ): ArrayList<WebSearchProvider> {
         val defaultProvider = resources.getStringArray(
-                R.array.pref_search_provider_title)
+            R.array.pref_search_provider_title
+        )
         val defaultProviderId = resources.getStringArray(
-                R.array.pref_search_provider_values)
-        val tempList = ArrayList<WebSearchProvider>()
+            R.array.pref_search_provider_values
+        )
 
         // defaultProvider will always be the same size as defaultProviderUrl.
         // However, we start at 1 to ignore the 'Always ask' option.
-        for (i in 1 until defaultProvider.size) {
-            tempList.add(WebSearchProvider(defaultProvider[i],
-                    PreferenceHelper.getDefaultProvider(defaultProviderId[i]),
-                    defaultProvider[i]))
+        defaultProvider.forEachIndexed { index, _ ->
+            if (index > 0) {
+                list.add(
+                    WebSearchProvider(
+                        defaultProvider[index],
+                        PreferenceHelper.getDefaultProvider(defaultProviderId[index]),
+                        defaultProvider[index]
+                    )
+                )
+            }
         }
-        PreferenceHelper.updateProvider(tempList)
+
+        return list
     }
 
     /**
@@ -306,7 +349,15 @@ object Utils {
     /**
      * Directions of gesture.
      */
-    @IntDef(Gesture.LEFT, Gesture.RIGHT, Gesture.UP, Gesture.DOWN, Gesture.TAP, Gesture.DOUBLE_TAP, Gesture.PINCH)
+    @IntDef(
+        Gesture.LEFT,
+        Gesture.RIGHT,
+        Gesture.UP,
+        Gesture.DOWN,
+        Gesture.TAP,
+        Gesture.DOUBLE_TAP,
+        Gesture.PINCH
+    )
     @kotlin.annotation.Retention(AnnotationRetention.SOURCE)
     annotation class Gesture {
         companion object {

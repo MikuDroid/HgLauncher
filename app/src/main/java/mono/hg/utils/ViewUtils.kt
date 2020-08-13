@@ -2,18 +2,21 @@ package mono.hg.utils
 
 import android.annotation.TargetApi
 import android.app.Activity
-import android.content.res.Resources
+import android.content.Intent
 import android.os.Build
 import android.view.View
+import android.view.WindowInsets
+import android.view.WindowInsetsController
+import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.app.AppCompatDelegate
 import androidx.appcompat.widget.PopupMenu
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.FragmentManager
 import androidx.recyclerview.widget.RecyclerView
-import eu.davidea.flexibleadapter.FlexibleAdapter
 import mono.hg.R
+import mono.hg.adapters.AppAdapter
 import mono.hg.helpers.PreferenceHelper
-import mono.hg.models.App
 
 /**
  * Utils class handling transformation of views relating to the launcher.
@@ -22,23 +25,15 @@ import mono.hg.models.App
  */
 object ViewUtils {
     /**
-     * Fetch statusbar height from system's dimension.
+     * Configures the status bar and navigation bar mode according to the
+     * user's preference.
      *
-     * @return int Size of the statusbar. Returns the fallback value of 24dp if the
-     * associated dimen value cannot be found.
+     * @param mode  Between "status", "nav", "both", or "none". The parameter used
+     *              set the mode of the system bars.
+     *
+     * @see R.array.pref_windowbar_values
      */
-    val statusBarHeight: Int
-        get() {
-            val idStatusBarHeight = Resources.getSystem()
-                    .getIdentifier("status_bar_height", "dimen", "android")
-            return if (idStatusBarHeight > 0) {
-                Resources.getSystem().getDimensionPixelSize(idStatusBarHeight)
-            } else {
-                // Return fallback size if we can't get the value from the system.
-                Resources.getSystem().getDimensionPixelSize(R.dimen.status_bar_height_fallback)
-            }
-        }
-
+    @Suppress("DEPRECATION") // This is meant for older APIs.
     @TargetApi(Build.VERSION_CODES.JELLY_BEAN)
     fun setWindowbarMode(mode: String?): Int {
         val baseLayout: Int = if (Utils.sdkIsAround(19)) {
@@ -62,34 +57,72 @@ object ViewUtils {
     }
 
     /**
+     * Configures the status bar and navigation bar mode according to the
+     * user's preference.
+     *
+     * @param mode  Between "status", "nav", "both", or "none". The parameter used
+     *              set the mode of the system bars.
+     *
+     * @see R.array.pref_windowbar_values
+     */
+    @RequiresApi(Build.VERSION_CODES.R)
+    fun setWindowBarMode(activity: AppCompatActivity, mode: String?) {
+        activity.window.setDecorFitsSystemWindows(false)
+
+        val insetsController = activity.window.insetsController
+        insetsController?.systemBarsBehavior =
+            WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        when (mode) {
+            "status" -> insetsController?.hide(WindowInsets.Type.statusBars())
+            "nav" -> insetsController?.hide(WindowInsets.Type.navigationBars())
+            "both" -> insetsController?.hide(WindowInsets.Type.systemBars())
+        }
+    }
+
+    /**
      * Launches an app based on RecyclerView scroll state.
+     *
+     * When the RecyclerView is unable to scroll upwards, it will
+     * call the topmost item. Otherwise, the reverse applies when
+     * the RecyclerView can't scroll downwards.
      *
      * @param activity     The activity for context reference.
      * @param recyclerView The RecyclerView itself.
      * @param adapter      A FlexibleAdapter with App items.
      */
-    fun keyboardLaunchApp(activity: Activity, recyclerView: RecyclerView, adapter: FlexibleAdapter<App?>) {
+    fun keyboardLaunchApp(
+        activity: Activity,
+        recyclerView: RecyclerView,
+        adapter: AppAdapter
+    ) {
         if (recyclerView.canScrollVertically(RecyclerView.FOCUS_UP)) {
             adapter.getItem(0)?.let { AppUtils.launchApp(activity, it) }
-        } else if (!recyclerView.canScrollVertically(RecyclerView.FOCUS_DOWN)) {
+        } else if (! recyclerView.canScrollVertically(RecyclerView.FOCUS_DOWN)) {
             adapter.getItem(adapter.itemCount - 1)?.let { AppUtils.launchApp(activity, it) }
         }
     }
 
     /**
-     * Sets initial fragment. This fragment is not added to the backstack.
+     * Sets initial/starting fragment.
+     *
+     * This function should be called early, when the activity has no other
+     * fragments to present, as this fragment will not be added to back stack.
      *
      * @param fragmentManager The fragment manager in the current activity.
      * @param fragment        The fragment to use.
      */
     fun setFragment(fragmentManager: FragmentManager, fragment: Fragment?, tag: String?) {
         fragmentManager.beginTransaction()
-                .replace(R.id.fragment_container, fragment!!, tag)
-                .commit()
+            .replace(R.id.fragment_container, fragment !!, tag)
+            .commit()
     }
 
     /**
-     * Replace existing fragment with another. This adds the fragment to the back stack.
+     * Replace existing fragment with another fragment.
+     *
+     * This function adds the fragment to the back stack, allowing for calls
+     * to [Activity.onBackPressed] to proceed. The fragment and activity
+     * should account for this.
      *
      * @param fragmentManager The fragment manager in the current activity.
      * @param fragment        The fragment to use.
@@ -97,26 +130,115 @@ object ViewUtils {
      */
     fun replaceFragment(fragmentManager: FragmentManager, fragment: Fragment?, tag: String?) {
         fragmentManager.beginTransaction()
-                .replace(R.id.fragment_container, fragment!!)
-                .addToBackStack(tag)
-                .commit()
+            .replace(R.id.fragment_container, fragment !!)
+            .addToBackStack(tag)
+            .commit()
     }
 
     /**
-     * Creates a PopupMenu containing available search provider.
+     * Creates a PopupMenu containing all available search provider.
      *
      * @param activity  Activity where the PopupMenu resides.
      * @param popupMenu The PopupMenu to populate and show.
      * @param query     Search query to launch when a provider is selected.
      */
-    fun createSearchMenu(activity: AppCompatActivity, popupMenu: PopupMenu, query: String?) {
+    fun createSearchMenu(activity: AppCompatActivity, popupMenu: PopupMenu, query: String) {
         PreferenceHelper.providerList.forEach { popupMenu.menu.add(it.key) }
         popupMenu.setOnMenuItemClickListener { menuItem ->
-            Utils.doWebSearch(activity,
-                    PreferenceHelper.getProvider(menuItem.title.toString()),
-                    query)
+            PreferenceHelper.getProvider(menuItem.title.toString())?.let {
+                Utils.doWebSearch(
+                    activity,
+                    it,
+                    query
+                )
+            }
             true
         }
         popupMenu.show()
     }
+
+    /**
+     * A helper function used to switch the current theme of the activity.
+     *
+     * This function calls [switchThemeLegacy] for API level lower than 17 (Jelly Bean MR1),
+     * which uses [AppCompatActivity.setTheme] instead of [AppCompatDelegate.setLocalNightMode]
+     * for compatibility purposes.
+     *
+     * @param activity              The activity to set the theme to.
+     * @param isLauncherActivity    Whether to use the LauncherTheme. This is a special theme
+     *                              meant to be used solely for the LauncherActivity,
+     *                              and will likely cause issues with a= regular activity.
+     */
+    fun switchTheme(activity: AppCompatActivity, isLauncherActivity: Boolean) {
+        if (Utils.sdkIsAround(17)) {
+            switchThemeDelegate(activity, isLauncherActivity)
+        } else {
+            switchThemeLegacy(activity, isLauncherActivity)
+        }
+    }
+
+    private fun switchThemeLegacy(activity: AppCompatActivity, isLauncherActivity: Boolean) {
+        if (isLauncherActivity) {
+            when (PreferenceHelper.appTheme()) {
+                "light" -> activity.setTheme(R.style.LauncherTheme)
+                "dark" -> activity.setTheme(R.style.LauncherTheme_Dark)
+                "black" -> activity.setTheme(R.style.LauncherTheme_Night)
+                else -> activity.setTheme(R.style.LauncherTheme_Night)
+            }
+        } else {
+            when (PreferenceHelper.appTheme()) {
+                "light" -> activity.setTheme(R.style.AppTheme)
+                "dark" -> activity.setTheme(R.style.AppTheme_Dark)
+                "black" -> activity.setTheme(R.style.AppTheme_Night)
+                else -> activity.setTheme(R.style.AppTheme_Night)
+            }
+        }
+    }
+
+    @RequiresApi(Build.VERSION_CODES.JELLY_BEAN_MR1)
+    private fun switchThemeDelegate(activity: AppCompatActivity, isLauncherActivity: Boolean) {
+        when (PreferenceHelper.appTheme()) {
+            "light" -> activity.delegate.localNightMode = AppCompatDelegate.MODE_NIGHT_NO
+            "dark" -> {
+                activity.delegate.localNightMode = AppCompatDelegate.MODE_NIGHT_YES
+                if (isLauncherActivity) {
+                    activity.setTheme(R.style.LauncherTheme_Dark)
+                } else {
+                    activity.setTheme(R.style.AppTheme_Dark)
+                }
+            }
+            "black" -> activity.delegate.localNightMode = AppCompatDelegate.MODE_NIGHT_YES
+            else -> if (Utils.atLeastQ()) {
+                activity.delegate.localNightMode = AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
+            } else {
+                activity.delegate.localNightMode = AppCompatDelegate.MODE_NIGHT_AUTO_BATTERY
+            }
+        }
+    }
+
+    /**
+     * Called when the activity needs to be restarted (i.e when a theme change occurs).
+     * Allows for smooth transition between recreation, without the flicker associated
+     * with calling [Activity.recreate].
+     *
+     * @param activity  AppCompatActivity that needs to be restarted.
+     * @param clearTask Whether [Intent.FLAG_ACTIVITY_NEW_TASK] and [Intent.FLAG_ACTIVITY_CLEAR_TASK]
+     *                  flags should be used. These flags are useful for bottommost activity,
+     *                  where the backstack is at its end.
+     */
+    fun restartActivity(activity: AppCompatActivity, clearTask: Boolean) {
+        Intent(activity.intent).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NO_ANIMATION)
+            if (clearTask) {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+            } else {
+                addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            }
+        }.also {
+            activity.startActivity(it)
+            activity.finish()
+            activity.overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out)
+        }
+    }
+
 }

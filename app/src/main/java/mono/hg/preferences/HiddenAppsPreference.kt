@@ -1,20 +1,34 @@
 package mono.hg.preferences
 
 import android.os.Bundle
-import android.view.*
+import android.view.LayoutInflater
+import android.view.Menu
+import android.view.MenuInflater
+import android.view.MenuItem
+import android.view.View
+import android.view.ViewGroup
 import android.widget.AdapterView
 import android.widget.ListView
 import androidx.annotation.Keep
 import androidx.preference.PreferenceFragmentCompat
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import mono.hg.R
 import mono.hg.SettingsActivity
 import mono.hg.adapters.HiddenAppAdapter
+import mono.hg.compatHide
+import mono.hg.compatShow
 import mono.hg.databinding.FragmentHiddenAppsBinding
 import mono.hg.helpers.PreferenceHelper
 import mono.hg.models.App
 import mono.hg.utils.AppUtils
 import java.util.*
 
+/**
+ * Preferences for the hidden apps list.
+ */
 @Keep
 class HiddenAppsPreference : PreferenceFragmentCompat() {
     private var binding: FragmentHiddenAppsBinding? = null
@@ -27,18 +41,23 @@ class HiddenAppsPreference : PreferenceFragmentCompat() {
         // No-op.
     }
 
-    override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View? {
+    override fun onCreateView(
+        inflater: LayoutInflater,
+        container: ViewGroup?,
+        savedInstanceState: Bundle?
+    ): View? {
         binding = FragmentHiddenAppsBinding.inflate(inflater, container, false)
-        return binding!!.root
+        return binding !!.root
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setHasOptionsMenu(true)
 
-        excludedAppList = PreferenceHelper.preference.getStringSet("hidden_apps", HashSet()) as HashSet<String>
+        excludedAppList =
+            PreferenceHelper.preference.getStringSet("hidden_apps", HashSet()) as HashSet<String>
 
-        appsListView = binding!!.hiddenAppsList
+        appsListView = binding !!.hiddenAppsList
         hiddenAppAdapter = context?.let { HiddenAppAdapter(appList, it) }
         appsListView.adapter = hiddenAppAdapter
 
@@ -58,11 +77,13 @@ class HiddenAppsPreference : PreferenceFragmentCompat() {
     }
 
     override fun onCreateOptionsMenu(menu: Menu, inflater: MenuInflater) {
-        menu.clear()
-        menu.add(0, 1, 100, getString(R.string.action_hidden_app_reset))
-        menu.getItem(0).setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
-        menu.getItem(0).isVisible = excludedAppList.isNotEmpty()
-        super.onCreateOptionsMenu(menu, inflater)
+        with(menu) {
+            clear()
+            add(0, 1, 100, getString(R.string.action_hidden_app_reset))
+            getItem(0).setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
+            getItem(0).isVisible = excludedAppList.isNotEmpty()
+            super.onCreateOptionsMenu(this, inflater)
+        }
     }
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
@@ -87,13 +108,23 @@ class HiddenAppsPreference : PreferenceFragmentCompat() {
     }
 
     private fun loadApps() {
-        // Clear the list to make sure that we aren't just adding over an existing list.
-        appList.clear()
-        hiddenAppAdapter!!.notifyDataSetInvalidated()
-
-        // Fetch and add every app into our list,
-        appList.addAll(AppUtils.loadApps(requireActivity(), false))
-        hiddenAppAdapter!!.notifyDataSetChanged()
+        if (isVisible) {
+            CoroutineScope(Dispatchers.Main).launch {
+                (requireActivity() as SettingsActivity).progressBar.compatShow()
+                withContext(Dispatchers.Default) {
+                    appList.clear()
+                    appList.addAll(
+                        AppUtils.loadApps(
+                            requireActivity(),
+                            hideHidden = false,
+                            shouldSort = false
+                        )
+                    )
+                }
+                hiddenAppAdapter?.notifyDataSetChanged()
+                (requireActivity() as SettingsActivity).progressBar.compatHide()
+            }
+        }
     }
 
     private fun toggleHiddenState(position: Int) {
@@ -110,13 +141,14 @@ class HiddenAppsPreference : PreferenceFragmentCompat() {
         appList[position].isAppHidden = excludedAppList.contains(packageName)
 
         // Reload the app list!
-        hiddenAppAdapter!!.notifyDataSetChanged()
+        hiddenAppAdapter?.notifyDataSetChanged()
 
         // Toggle the state of the 'restore all' button.
         requireActivity().invalidateOptionsMenu()
     }
 
     private fun addListeners() {
-        appsListView.onItemClickListener = AdapterView.OnItemClickListener { _, _, position, _ -> toggleHiddenState(position) }
+        appsListView.onItemClickListener =
+            AdapterView.OnItemClickListener { _, _, position, _ -> toggleHiddenState(position) }
     }
 }
