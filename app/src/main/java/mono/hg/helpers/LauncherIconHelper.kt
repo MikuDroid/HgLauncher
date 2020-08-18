@@ -65,7 +65,8 @@ object LauncherIconHelper {
         return if (! shouldHide) {
             var icon = getIconDrawable(activity, componentName, user)
             if (PreferenceHelper.shadeAdaptiveIcon() &&
-                (Utils.atLeastOreo() && icon is AdaptiveIconDrawable)) {
+                (Utils.atLeastOreo() && icon is AdaptiveIconDrawable)
+            ) {
                 icon = drawAdaptiveShadow(activity.resources, icon)
             }
             icon
@@ -144,10 +145,11 @@ object LauncherIconHelper {
      */
     fun loadIconPack(packageManager: PackageManager): Int {
         var iconFilterXml: XmlPullParser? = null
-        val iconPackageName = PreferenceHelper.preference.getString("icon_pack", "default")
+        val iconPackageName =
+            PreferenceHelper.preference.getString("icon_pack", "default") ?: "default"
         val iconRes: Resources = try {
             if ("default" != iconPackageName) {
-                packageManager.getResourcesForApplication(iconPackageName !!)
+                packageManager.getResourcesForApplication(iconPackageName)
             } else {
                 // Return with a success because there's nothing to fetch.
                 return 1
@@ -181,19 +183,19 @@ object LauncherIconHelper {
         }
 
         // Begin parsing the received appfilter.
-        if (iconFilterXml != null) {
+        iconFilterXml?.apply {
             try {
-                var eventType = iconFilterXml.eventType
+                var eventType = this.eventType
                 while (eventType != XmlPullParser.END_DOCUMENT) {
                     if (eventType == XmlPullParser.START_TAG) {
-                        if (iconFilterXml.name == "item") {
+                        if (this.name == "item") {
                             var componentName: String? = null
                             var drawableName: String? = null
-                            for (i in 0 until iconFilterXml.attributeCount) {
-                                if (iconFilterXml.getAttributeName(i) == "component") {
-                                    componentName = iconFilterXml.getAttributeValue(i)
-                                } else if (iconFilterXml.getAttributeName(i) == "drawable") {
-                                    drawableName = iconFilterXml.getAttributeValue(i)
+                            for (i in 0 until this.attributeCount) {
+                                if (this.getAttributeName(i) == "component") {
+                                    componentName = this.getAttributeValue(i)
+                                } else if (this.getAttributeName(i) == "drawable") {
+                                    drawableName = this.getAttributeValue(i)
                                 }
                             }
                             if (! mPackagesDrawables.containsKey(componentName)) {
@@ -201,7 +203,7 @@ object LauncherIconHelper {
                             }
                         }
                     }
-                    eventType = iconFilterXml.next()
+                    eventType = this.next()
                 }
             } catch (e: IOException) {
                 Utils.sendLog(LogLevel.ERROR, e.toString())
@@ -244,8 +246,9 @@ object LauncherIconHelper {
     private fun getIconDrawable(activity: Activity, appPackageName: String, user: Long): Drawable? {
         val packageManager = activity.packageManager
         val componentName = "ComponentInfo{$appPackageName}"
-        val iconPackageName = PreferenceHelper.preference.getString("icon_pack", "default") ?: "default"
-        var iconRes: Resources ?= null
+        val iconPackageName =
+            PreferenceHelper.preference.getString("icon_pack", "default") ?: "default"
+        var iconRes: Resources? = null
         var defaultIcon: Drawable? = null
         try {
             defaultIcon = if (Utils.atLeastLollipop()) {

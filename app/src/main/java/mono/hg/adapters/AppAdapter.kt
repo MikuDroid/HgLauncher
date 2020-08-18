@@ -18,7 +18,6 @@ import java.util.*
 class AppAdapter(apps: List<App?>, listeners: Any?, stableIds: Boolean) :
     FlexibleAdapter<App>(apps, listeners, stableIds), SectionedAdapter {
     private var mSelectedItem = 0
-    private lateinit var adapterRecyclerView: RecyclerView
     private var finishedLoading = false
 
     constructor(apps: List<App?>) : this(apps, null, true)
@@ -65,9 +64,9 @@ class AppAdapter(apps: List<App?>, listeners: Any?, stableIds: Boolean) :
                         return@OnKeyListener true
                     } else {
                         if (isDown(keyCode)) {
-                            return@OnKeyListener tryMoveSelection(1)
+                            return@OnKeyListener tryMoveSelection(1, recyclerView)
                         } else if (isUp(keyCode)) {
-                            return@OnKeyListener tryMoveSelection(- 1)
+                            return@OnKeyListener tryMoveSelection(- 1, recyclerView)
                         }
                     }
                 } else if (event.action == KeyEvent.ACTION_UP && isConfirmButton(event)
@@ -102,7 +101,7 @@ class AppAdapter(apps: List<App?>, listeners: Any?, stableIds: Boolean) :
         finishedLoading = finished
     }
 
-    private fun tryMoveSelection(direction: Int): Boolean {
+    private fun tryMoveSelection(direction: Int, recyclerView: RecyclerView): Boolean {
         val nextSelectItem = mSelectedItem + direction
 
         // If still within valid bounds, move the selection, notify to redraw, and scroll.
@@ -110,7 +109,7 @@ class AppAdapter(apps: List<App?>, listeners: Any?, stableIds: Boolean) :
             notifyItemChanged(mSelectedItem)
             mSelectedItem = nextSelectItem
             notifyItemChanged(mSelectedItem)
-            adapterRecyclerView.smoothScrollToPosition(mSelectedItem)
+            recyclerView.smoothScrollToPosition(mSelectedItem)
             return true
         }
         return false
@@ -123,14 +122,20 @@ class AppAdapter(apps: List<App?>, listeners: Any?, stableIds: Boolean) :
 
         private fun isUp(keycode: Int): Boolean {
             return when (keycode) {
-                KeyEvent.KEYCODE_SYSTEM_NAVIGATION_UP, KeyEvent.KEYCODE_DPAD_UP -> true
+                KeyEvent.KEYCODE_SYSTEM_NAVIGATION_UP,
+                KeyEvent.KEYCODE_SYSTEM_NAVIGATION_LEFT,
+                KeyEvent.KEYCODE_DPAD_LEFT,
+                KeyEvent.KEYCODE_DPAD_UP -> true
                 else -> false
             }
         }
 
         private fun isDown(keycode: Int): Boolean {
             return when (keycode) {
-                KeyEvent.KEYCODE_SYSTEM_NAVIGATION_DOWN, KeyEvent.KEYCODE_DPAD_DOWN -> true
+                KeyEvent.KEYCODE_SYSTEM_NAVIGATION_DOWN,
+                KeyEvent.KEYCODE_SYSTEM_NAVIGATION_RIGHT,
+                KeyEvent.KEYCODE_DPAD_RIGHT,
+                KeyEvent.KEYCODE_DPAD_DOWN -> true
                 else -> false
             }
         }

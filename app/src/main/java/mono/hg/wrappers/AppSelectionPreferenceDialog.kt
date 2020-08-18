@@ -23,7 +23,7 @@ class AppSelectionPreferenceDialog : DialogFragment() {
     private val selectItemListener = DialogInterface.OnClickListener { dialog, which ->
         if (mClickedDialogEntryIndex != which) {
             mClickedDialogEntryIndex = which
-            mValue = mEntryValues !![mClickedDialogEntryIndex].toString()
+            mValue = mEntryValues?.get(mClickedDialogEntryIndex).toString()
             PreferenceHelper.update(preference, mValue)
         }
         dialog.dismiss()
@@ -31,11 +31,9 @@ class AppSelectionPreferenceDialog : DialogFragment() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        if (arguments != null) {
-            preference = arguments?.getString("key")
-            mEntries = arguments?.getCharSequenceArray("entries")
-            mEntryValues = arguments?.getCharSequenceArray("entryValues")
-        }
+        preference = arguments?.getString("key")
+        mEntries = arguments?.getCharSequenceArray("entries")
+        mEntryValues = arguments?.getCharSequenceArray("entryValues")
     }
 
     override fun onStart() {
@@ -54,18 +52,19 @@ class AppSelectionPreferenceDialog : DialogFragment() {
         super.onDismiss(dialog)
         if (mValue == null) {
             val i = Intent().putExtra("key", preference)
-            targetFragment !!.onActivityResult(targetRequestCode, Activity.RESULT_CANCELED, i)
+            targetFragment?.onActivityResult(targetRequestCode, Activity.RESULT_CANCELED, i)
             PreferenceHelper.update(preference, "none")
         } else {
             val i = Intent().putExtra("key", preference).putExtra("app", mValue)
-            targetFragment !!.onActivityResult(targetRequestCode, Activity.RESULT_OK, i)
+            targetFragment?.onActivityResult(targetRequestCode, Activity.RESULT_OK, i)
         }
     }
 
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
         val theme: Int =
             if (Utils.sdkIsBelow(17) &&
-                (PreferenceHelper.appTheme() == "dark" || PreferenceHelper.appTheme() == "black")) {
+                (PreferenceHelper.appTheme() == "dark" || PreferenceHelper.appTheme() == "black")
+            ) {
                 R.style.PreferenceList_Night_NoRadio
             } else {
                 R.style.PreferenceList_NoRadio

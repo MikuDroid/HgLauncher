@@ -5,8 +5,10 @@ import android.app.Activity
 import android.content.Intent
 import android.os.Build
 import android.view.View
+import android.view.Window
 import android.view.WindowInsets
 import android.view.WindowInsetsController
+import android.view.WindowManager
 import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
@@ -24,6 +26,25 @@ import mono.hg.helpers.PreferenceHelper
  * Generally, most misc. view-handling is also stored here.
  */
 object ViewUtils {
+    /**
+     * Hides the status bar from the current activity.
+     *
+     * This function should only be used for API 14 and 15.
+     * For higher API levels, refer to [setWindowBarMode].
+     *
+     * @param window    The Window object from an activity,
+     *                  can be retrieved through getWindow().
+     */
+    @TargetApi(Build.VERSION_CODES.ICE_CREAM_SANDWICH)
+    fun hideStatusBar(window: Window) {
+        if (Utils.sdkIsBelow(16)) {
+            window.setFlags(
+                WindowManager.LayoutParams.FLAG_FULLSCREEN,
+                WindowManager.LayoutParams.FLAG_FULLSCREEN
+            )
+        }
+    }
+
     /**
      * Configures the status bar and navigation bar mode according to the
      * user's preference.
@@ -111,9 +132,9 @@ object ViewUtils {
      * @param fragmentManager The fragment manager in the current activity.
      * @param fragment        The fragment to use.
      */
-    fun setFragment(fragmentManager: FragmentManager, fragment: Fragment?, tag: String?) {
+    fun setFragment(fragmentManager: FragmentManager, fragment: Fragment, tag: String?) {
         fragmentManager.beginTransaction()
-            .replace(R.id.fragment_container, fragment !!, tag)
+            .replace(R.id.fragment_container, fragment, tag)
             .commit()
     }
 
@@ -128,9 +149,9 @@ object ViewUtils {
      * @param fragment        The fragment to use.
      * @param tag             The tag used for the fragment.
      */
-    fun replaceFragment(fragmentManager: FragmentManager, fragment: Fragment?, tag: String?) {
+    fun replaceFragment(fragmentManager: FragmentManager, fragment: Fragment, tag: String?) {
         fragmentManager.beginTransaction()
-            .replace(R.id.fragment_container, fragment !!)
+            .replace(R.id.fragment_container, fragment)
             .addToBackStack(tag)
             .commit()
     }

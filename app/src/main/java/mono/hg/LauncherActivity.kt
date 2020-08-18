@@ -328,11 +328,7 @@ class LauncherActivity : AppCompatActivity() {
 
         // Restore last search query if the user requests for it.
         if (PreferenceHelper.keepLastSearch()) {
-            if (viewPagerAdapter.getCurrentPage() != null) {
-                if (viewPagerAdapter.getCurrentPage() !!.isAcceptingSearch()) {
-                    viewPagerAdapter.getCurrentPage()?.commitSearch(searchBar.text.toString())
-                }
-            }
+            doSearch(searchBar.text.toString())
         }
 
         // Toggle back the refresh switch.
@@ -367,8 +363,12 @@ class LauncherActivity : AppCompatActivity() {
         } else if (Utils.atLeastKitKat()) {
             window.decorView.systemUiVisibility =
                 ViewUtils.setWindowbarMode(PreferenceHelper.windowBarMode)
-        } else if (Utils.sdkIsBelow(19) && PreferenceHelper.shouldHideStatusBar()) {
-            window.decorView.systemUiVisibility = ViewUtils.setWindowbarMode("status")
+        } else if (PreferenceHelper.shouldHideStatusBar()) {
+            if (Utils.sdkIsAround(16)) {
+                window.decorView.systemUiVisibility = ViewUtils.setWindowbarMode("status")
+            } else {
+                ViewUtils.hideStatusBar(window)
+            }
         }
     }
 
@@ -384,7 +384,7 @@ class LauncherActivity : AppCompatActivity() {
 
     override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
         return if (event.action == KeyEvent.ACTION_DOWN && event.isCtrlPressed) {
-            searchBar.let { Utils.handleInputShortcut(this, it, keyCode) } !!
+            Utils.handleInputShortcut(this, searchBar, keyCode)
         } else {
             if (keyCode == KeyEvent.KEYCODE_SPACE) {
                 if (window.currentFocus !== searchBar) {
@@ -404,14 +404,10 @@ class LauncherActivity : AppCompatActivity() {
      */
     fun doThis(action: String?) {
         when (action) {
-            CLOSE_MENU -> if (appMenu != null) {
-                if (appMenu !!.menu.findItem(R.id.action_app_actions) != null) {
-                    appMenu !!.menu.findItem(R.id.action_app_actions).subMenu.close()
-                }
-                if (appMenu !!.menu.findItem(SHORTCUT_MENU_GROUP) != null) {
-                    appMenu !!.menu.findItem(SHORTCUT_MENU_GROUP).subMenu.close()
-                }
-                appMenu !!.dismiss()
+            CLOSE_MENU -> appMenu?.apply {
+                this.menu.findItem(R.id.action_app_actions)?.subMenu?.close()
+                this.menu.findItem(SHORTCUT_MENU_GROUP)?.subMenu?.close()
+                this.dismiss()
             }
             SHOW_PANEL -> slidingHome.setPanelState(
                 SlidingUpPanelLayout.PanelState.COLLAPSED,
@@ -519,7 +515,7 @@ class LauncherActivity : AppCompatActivity() {
 
         // Get the default providers list if it's empty.
         if (PreferenceHelper.providerList.isEmpty()) {
-            Utils.setDefaultProviders(resources, ArrayList())
+            PreferenceHelper.updateProvider(Utils.setDefaultProviders(resources, ArrayList()))
         }
 
         ViewUtils.switchTheme(this, true)
@@ -531,7 +527,7 @@ class LauncherActivity : AppCompatActivity() {
      * @param view     View for the PopupMenu to anchor to.
      * @param app      App object selected from the list.
      */
-    private fun createAppMenu(view: View?, app: App) {
+    private fun createAppMenu(view: View, app: App) {
         val packageName = app.packageName
         val user = app.user
         val packageNameUri = Uri.fromParts(
@@ -542,7 +538,7 @@ class LauncherActivity : AppCompatActivity() {
         val position = pinnedAppsAdapter.getGlobalPositionOf(app)
 
         // Inflate the app menu.
-        appMenu = PopupMenu(this@LauncherActivity, view !!)
+        appMenu = PopupMenu(this@LauncherActivity, view)
         appMenu !!.menuInflater.inflate(R.menu.menu_app, appMenu !!.menu)
         appMenu !!.menu.addSubMenu(1, SHORTCUT_MENU_GROUP, 0, R.string.action_shortcuts)
 
@@ -559,7 +555,7 @@ class LauncherActivity : AppCompatActivity() {
         // Show uninstall menu if the app is not a system app.
         appMenu !!.menu.findItem(R.id.action_uninstall).isVisible =
             (! AppUtils.isSystemApp(packageManager, packageName)
-                    && app.user == userUtils !!.currentSerial)
+                    && app.user == userUtils?.currentSerial)
 
         // Inflate app shortcuts.
         if (Utils.sdkIsAround(25)) {
@@ -637,12 +633,8 @@ class LauncherActivity : AppCompatActivity() {
             override fun onPageSelected(position: Int) {
                 super.onPageSelected(position)
 
-                // Pages should be informed of the new query as soon as they are selected.
-                if (viewPagerAdapter.getCurrentPage() != null) {
-                    if (viewPagerAdapter.getCurrentPage() !!.isAcceptingSearch()) {
-                        viewPagerAdapter.getCurrentPage()?.commitSearch(searchBar.text.toString())
-                    }
-                }
+                // Pages should be informed about the new query as soon as they are selected.
+                doSearch(searchBar.text.toString())
             }
         })
 
@@ -663,20 +655,12 @@ class LauncherActivity : AppCompatActivity() {
                     if (isContextVisible) {
                         doThis("hide_context_button")
                     }
-                    if (viewPagerAdapter.getCurrentPage() != null) {
-                        if (viewPagerAdapter.getCurrentPage() !!.isAcceptingSearch()) {
-                            viewPagerAdapter.getCurrentPage()?.resetSearch()
-                        }
-                    }
+                    resetSearch()
                     searchSnack.dismiss()
                     stopTimer()
                 } else {
                     // Begin filtering our list.
-                    if (viewPagerAdapter.getCurrentPage() != null) {
-                        if (viewPagerAdapter.getCurrentPage() !!.isAcceptingSearch()) {
-                            viewPagerAdapter.getCurrentPage()?.commitSearch(trimmedInputText)
-                        }
-                    }
+                    doSearch(trimmedInputText)
                 }
             }
 
@@ -798,9 +782,10 @@ class LauncherActivity : AppCompatActivity() {
                 if (newState != ItemTouchHelper.ACTION_STATE_DRAG && System.currentTimeMillis() - startTime == System
                         .currentTimeMillis()
                 ) {
-                    val app: App? = pinnedAppsAdapter.getItem(viewHolder !!.absoluteAdapterPosition)
-
-                    app?.let { createAppMenu(viewHolder.itemView, it) }
+                    viewHolder?.apply {
+                        val app: App? = pinnedAppsAdapter.getItem(this.absoluteAdapterPosition)
+                        app?.let { createAppMenu(this.itemView, it) }
+                    }
                 } else {
                     // Reset startTime and update the pinned apps, we were swiping.
                     startTime = 0
@@ -843,12 +828,9 @@ class LauncherActivity : AppCompatActivity() {
                                     override fun onAnimationStart(animation: Animator) {
                                         searchContainer.visibility = View.VISIBLE
                                     }
-
-                                    override fun onAnimationEnd(animation: Animator) {
-                                        searchContainer.clearAnimation()
-                                    }
                                 })
                         } else {
+                            searchContainer.animate().alpha(1f)
                             searchContainer.visibility = View.VISIBLE
                         }
                     }
@@ -862,11 +844,14 @@ class LauncherActivity : AppCompatActivity() {
                         // Hide keyboard if container is invisible.
                         ActivityServiceUtils.hideSoftKeyboard(this@LauncherActivity)
 
-                        // Animate the container.
+                        // Toggle the visibility early.
                         searchContainer.visibility = View.INVISIBLE
 
                         if (! isResuming && ! ActivityServiceUtils.isPowerSaving(this@LauncherActivity)) {
-                            searchContainer.animate().alpha(0f).duration = animateDuration.toLong()
+                            // Animate the container.
+                            searchContainer.animate().alpha(0f)
+                                .setDuration(animateDuration.toLong())
+                                .setListener(null)
                         } else {
                             isResuming = false
                         }
@@ -899,15 +884,12 @@ class LauncherActivity : AppCompatActivity() {
             pinnedAppList.clear()
             pinnedAppsAdapter.updateDataSet(pinnedAppList)
             pinnedAppString.split(";").forEach {
-                var componentName = it
-                var user = userUtils !!.currentSerial
-
                 // Handle pinned apps coming from another user.
                 val userSplit = it.split("-")
-                if (userSplit.size == 2) {
-                    user = userSplit[0].toLong()
-                    componentName = userSplit[1]
-                }
+                val componentName = if (userSplit.size == 2) userSplit[1] else it
+                val user =
+                    if (userSplit.size == 2) userSplit[0].toLong() else userUtils?.currentSerial
+                        ?: 0
 
                 if (AppUtils.doesComponentExist(packageManager, componentName)) {
                     AppUtils.pinApp(this, user, componentName, pinnedAppsAdapter, pinnedAppList)
@@ -920,6 +902,22 @@ class LauncherActivity : AppCompatActivity() {
 
         // Update the saved pinned apps.
         PreferenceHelper.update("pinned_apps_list", pinnedAppString)
+    }
+
+    private fun doSearch(query: String) {
+        viewPagerAdapter.getCurrentPage()?.apply {
+            if (this.isAcceptingSearch()) {
+                this.commitSearch(query)
+            }
+        }
+    }
+
+    private fun resetSearch() {
+        viewPagerAdapter.getCurrentPage()?.apply {
+            if (this.isAcceptingSearch()) {
+                this.resetSearch()
+            }
+        }
     }
 
     /**
@@ -941,10 +939,7 @@ class LauncherActivity : AppCompatActivity() {
     fun pinAppHere(packageName: String, user: Long) {
         // We need to make sure that an app from another user can be pinned.
         val userSplit = packageName.split("-")
-        var componentName = packageName
-        if (userSplit.size == 2) {
-            componentName = userSplit[1]
-        }
+        val componentName = if (userSplit.size == 2) userSplit[1] else packageName
 
         AppUtils.pinApp(this, user, componentName, pinnedAppsAdapter, pinnedAppList)
         updatePinnedApps(false)

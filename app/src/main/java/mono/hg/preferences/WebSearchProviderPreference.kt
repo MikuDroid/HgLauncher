@@ -46,17 +46,17 @@ class WebSearchProviderPreference : PreferenceFragmentCompat() {
         savedInstanceState: Bundle?
     ): View? {
         binding = FragmentWebProviderBinding.inflate(inflater, container, false)
-        return binding !!.root
+        return binding?.root
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         setHasOptionsMenu(true)
-        val providerListView = binding !!.webProviderList
+        val providerListView = binding?.webProviderList
         providerAdapter = context?.let { WebProviderAdapter(providerList, it) }
 
-        providerListView.adapter = providerAdapter
-        providerListView.onItemClickListener = AdapterView.OnItemClickListener { _, _, i, _ ->
+        providerListView?.adapter = providerAdapter
+        providerListView?.onItemClickListener = AdapterView.OnItemClickListener { _, _, i, _ ->
             val name = providerList[i].name
             val url = providerList[i].url
             makeEditMenu(name, url, true, i)
@@ -163,7 +163,8 @@ class WebSearchProviderPreference : PreferenceFragmentCompat() {
                 }
 
                 if ("none" != PreferenceHelper.getProvider(currentName) &&
-                    currentUrl != PreferenceHelper.providerList[currentName]) {
+                    currentUrl != PreferenceHelper.providerList[currentName]
+                ) {
                     // We already have that provider.
                     Toast.makeText(
                         requireContext(), R.string.err_provider_exists,

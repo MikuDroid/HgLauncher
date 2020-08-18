@@ -9,7 +9,6 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.LayoutInflater
-import android.view.MenuItem
 import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
@@ -60,7 +59,7 @@ class WidgetListFragment : GenericPageFragment() {
         appWidgetHost = LauncherAppWidgetHost(requireContext(), WIDGET_HOST_ID)
 
         widgetsList = PreferenceHelper.widgetList()
-        return binding !!.root
+        return binding?.root
     }
 
     override fun onDestroyView() {
@@ -148,16 +147,30 @@ class WidgetListFragment : GenericPageFragment() {
         if (resultCode == Activity.RESULT_OK && data != null) {
             val widgetId =
                 data.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, WIDGET_CONFIG_DEFAULT_CODE)
-            val appWidgetInfo = appWidgetManager.getAppWidgetInfo(widgetId)
-            if (requestCode != WIDGET_CONFIG_RETURN_CODE && appWidgetInfo.configure != null) {
-                Intent(AppWidgetManager.ACTION_APPWIDGET_CONFIGURE).apply {
-                    component = appWidgetInfo.configure
-                    putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
-                }.also {
-                    startActivityForResult(it, WIDGET_CONFIG_RETURN_CODE)
+
+            // Add the widget first.
+            addWidget(data, appWidgetContainer.childCount, true)
+
+            // Launch widget configuration if it exists.
+            if (requestCode != WIDGET_CONFIG_RETURN_CODE) {
+                appWidgetManager.getAppWidgetInfo(widgetId).configure?.apply {
+                    if (Utils.atLeastLollipop()) {
+                        appWidgetHost.startAppWidgetConfigureActivityForResult(
+                            requireActivity(),
+                            widgetId,
+                            0,
+                            WIDGET_CONFIG_RETURN_CODE,
+                            null
+                        )
+                    } else {
+                        with(Intent(AppWidgetManager.ACTION_APPWIDGET_CONFIGURE)) {
+                            component = this@apply
+                            putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
+                        }.also {
+                            startActivityForResult(it, WIDGET_CONFIG_RETURN_CODE)
+                        }
+                    }
                 }
-            } else {
-                addWidget(data, appWidgetContainer.childCount, true)
             }
         } else if (resultCode == Activity.RESULT_CANCELED && data != null) {
             val widgetId =
@@ -165,39 +178,6 @@ class WidgetListFragment : GenericPageFragment() {
             if (widgetId != WIDGET_CONFIG_DEFAULT_CODE) {
                 appWidgetHost.deleteAppWidgetId(widgetId)
             }
-        }
-    }
-
-    override fun onContextItemSelected(item: MenuItem): Boolean {
-        val index = appWidgetContainer.indexOfChild(callingView)
-        return when (item.itemId) {
-            0 -> {
-                // Don't pull the panel just yet.
-                getLauncherActivity().requestPanelLock()
-
-                Intent(AppWidgetManager.ACTION_APPWIDGET_PICK).apply {
-                    putExtra(
-                        AppWidgetManager.EXTRA_APPWIDGET_ID,
-                        appWidgetHost.allocateAppWidgetId()
-                    )
-                }.also {
-                    startActivityForResult(it, WIDGET_CONFIG_START_CODE)
-                }
-                true
-            }
-            1 -> {
-                callingView?.let { removeWidget(it, callingView !!.appWidgetId) }
-                true
-            }
-            2 -> {
-                swapWidget(index, index - 1)
-                true
-            }
-            3 -> {
-                swapWidget(index, index + 1)
-                true
-            }
-            else -> super.onContextItemSelected(item)
         }
     }
 
@@ -220,13 +200,9 @@ class WidgetListFragment : GenericPageFragment() {
 
         val widgetId =
             data.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, WIDGET_CONFIG_DEFAULT_CODE)
-        val appWidgetInfo = appWidgetManager.getAppWidgetInfo(widgetId)
 
-        if (appWidgetInfo != null) {
-            val appWidgetHostView = appWidgetHost.createView(
-                requireActivity().applicationContext,
-                widgetId, appWidgetInfo
-            ).apply {
+        appWidgetManager.getAppWidgetInfo(widgetId).apply {
+            with(appWidgetHost.createView(requireActivity().applicationContext, widgetId, this)) {
                 // Notify widget of the available minimum space.
                 minimumHeight = appWidgetInfo.minHeight
                 setAppWidget(widgetId, appWidgetInfo)
@@ -236,21 +212,20 @@ class WidgetListFragment : GenericPageFragment() {
                         appWidgetInfo.minHeight, appWidgetInfo.minWidth, appWidgetInfo.minHeight
                     )
                 }
-            }
 
-            // Add the widget.
-            appWidgetContainer.addView(appWidgetHostView, index)
+                // Add the widget.
+                appWidgetContainer.addView(this, index)
 
-            // Immediately listens for the widget.
-            appWidgetHost.startListening()
-            addWidgetActionListener(index)
-            registerForContextMenu(appWidgetContainer.getChildAt(index))
-            if (newWidget) {
-                // Update our list.
-                widgetsList.add(widgetId.toString())
+                // Immediately listens for the widget.
+                appWidgetHost.startListening()
+                addWidgetActionListener(index)
+                if (newWidget) {
+                    // Update our list.
+                    widgetsList.add(widgetId.toString())
 
-                // Apply preference changes.
-                PreferenceHelper.updateWidgets(widgetsList)
+                    // Apply preference changes.
+                    PreferenceHelper.updateWidgets(widgetsList)
+                }
             }
         }
     }
@@ -260,7 +235,6 @@ class WidgetListFragment : GenericPageFragment() {
      * relating to widgets.
      */
     private fun removeWidget(view: View, id: Int) {
-        unregisterForContextMenu(view)
         appWidgetContainer.removeView(view)
 
         // Remove the widget from the list.
@@ -314,8 +288,36 @@ class WidgetListFragment : GenericPageFragment() {
                 getItem(3).isVisible = appWidgetContainer.childCount != index + 1
             }
 
-            popupMenu.setOnMenuItemClickListener {
-                onContextItemSelected(it)
+            popupMenu.setOnMenuItemClickListener { item ->
+                when (item.itemId) {
+                    0 -> {
+                        // Don't pull the panel just yet.
+                        getLauncherActivity().requestPanelLock()
+
+                        Intent(AppWidgetManager.ACTION_APPWIDGET_PICK).apply {
+                            putExtra(
+                                AppWidgetManager.EXTRA_APPWIDGET_ID,
+                                appWidgetHost.allocateAppWidgetId()
+                            )
+                        }.also {
+                            startActivityForResult(it, WIDGET_CONFIG_START_CODE)
+                        }
+                        true
+                    }
+                    1 -> {
+                        removeWidget(callingView !!, callingView !!.appWidgetId)
+                        true
+                    }
+                    2 -> {
+                        swapWidget(index, index - 1)
+                        true
+                    }
+                    3 -> {
+                        swapWidget(index, index + 1)
+                        true
+                    }
+                    else -> false
+                }
             }
 
             popupMenu.show()

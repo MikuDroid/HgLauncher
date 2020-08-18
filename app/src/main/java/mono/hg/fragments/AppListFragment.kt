@@ -18,12 +18,12 @@ import android.view.ViewGroup
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.widget.PopupMenu
 import androidx.core.view.ViewCompat
+import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.DefaultItemAnimator
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.simplecityapps.recyclerview_fastscroll.views.FastScrollRecyclerView
 import eu.davidea.flexibleadapter.FlexibleAdapter
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -102,22 +102,16 @@ class AppListFragment : GenericPageFragment() {
         savedInstanceState: Bundle?
     ): View? {
         binding = FragmentAppListBinding.inflate(inflater, container, false)
-        loaderBinding = UiLoadProgressBinding.bind(binding !!.root)
+        loaderBinding = binding?.root?.let { UiLoadProgressBinding.bind(it) }
 
         // Get a list of our hidden apps, default to null if there aren't any.
         excludedAppsList.addAll(PreferenceHelper.exclusionList)
 
-        return binding !!.root
+        return binding?.root
     }
 
     override fun onDestroyView() {
         super.onDestroyView()
-
-        if (fetchAppsJob != null) {
-            CoroutineScope(Dispatchers.Default).launch {
-                fetchAppsJob?.cancel()
-            }
-        }
 
         unregisterBroadcast()
         binding = null
@@ -174,9 +168,9 @@ class AppListFragment : GenericPageFragment() {
 
         appsAdapter.addListener(FlexibleAdapter.OnUpdateListener { size ->
             if (size > 0 && ! appsAdapter.isEmpty) {
-                loaderBinding !!.loader.hide()
+                loaderBinding?.loader?.hide()
             } else {
-                loaderBinding !!.loader.show()
+                loaderBinding?.loader?.show()
             }
         })
 
@@ -203,13 +197,13 @@ class AppListFragment : GenericPageFragment() {
         super.onStart()
 
         if (AppUtils.hasNewPackage(manager) || appsAdapter.isEmpty) {
-            CoroutineScope(Dispatchers.Default).launch {
-                if (fetchAppsJob != null) {
-                    if (fetchAppsJob !!.isCompleted) {
+            lifecycleScope.launchWhenStarted {
+                fetchAppsJob?.apply {
+                    if (this.isCompleted) {
                         appsAdapter.finishedLoading(false)
                         fetchApps()
                     }
-                } else {
+                } ?: run {
                     fetchApps()
                 }
             }
@@ -330,30 +324,28 @@ class AppListFragment : GenericPageFragment() {
     private fun registerBroadcast() {
         packageBroadcastReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
-                val isRemoving =
-                    intent.getStringExtra("action") == "android.intent.action.PACKAGE_REMOVED"
                 val launchIntent = intent.getStringExtra("package")?.let {
                     requireActivity().packageManager.getLaunchIntentForPackage(
                         it
                     )
                 }
 
-                if (launchIntent != null) {
+                launchIntent?.apply {
                     val hasLauncherCategory = launchIntent.hasCategory(Intent.CATEGORY_LAUNCHER)
 
                     if (hasLauncherCategory && appsAdapter.hasFinishedLoading()) {
-                        CoroutineScope(Dispatchers.Default).launch {
+                        lifecycleScope.launch {
                             if (fetchAppsJob !!.isCompleted) {
                                 appsAdapter.finishedLoading(false)
                                 fetchApps()
                             }
                         }
                     }
-                } else if (isRemoving) {
+                } ?: run {
                     // Apps being uninstalled will have no launch intent,
                     // therefore it's better if we get the entire list again.
                     if (appsAdapter.hasFinishedLoading()) {
-                        CoroutineScope(Dispatchers.Default).launch {
+                        lifecycleScope.launch {
                             if (fetchAppsJob !!.isCompleted) {
                                 appsAdapter.finishedLoading(false)
                                 fetchApps()
@@ -380,10 +372,10 @@ class AppListFragment : GenericPageFragment() {
     }
 
     private fun unregisterBroadcast() {
-        if (packageBroadcastReceiver != null) {
+        packageBroadcastReceiver?.apply {
             requireActivity().unregisterReceiver(packageBroadcastReceiver)
             packageBroadcastReceiver = null
-        } else {
+        } ?: run {
             Utils.sendLog(
                 Utils.LogLevel.VERBOSE,
                 "unregisterBroadcast() was called to a null receiver."
@@ -392,11 +384,13 @@ class AppListFragment : GenericPageFragment() {
     }
 
     private suspend fun fetchApps() {
-        fetchAppsJob = CoroutineScope(Dispatchers.Default).launch {
-            val newList = AppUtils.loadApps(requireActivity(), hideHidden = true, shouldSort = true)
-            withContext(Dispatchers.Main) {
-                appsAdapter.updateDataSet(newList)
+        fetchAppsJob = lifecycleScope.launch {
+            var newList: List<App>
+            withContext(Dispatchers.Default) {
+                newList = AppUtils.loadApps(requireActivity(), hideHidden = true, shouldSort = true)
             }
+
+            appsAdapter.updateDataSet(newList)
             appsAdapter.recyclerView.setItemViewCacheSize(newList.size)
             appsAdapter.finishedLoading(true)
         }
@@ -409,7 +403,7 @@ class AppListFragment : GenericPageFragment() {
     private fun buildShorthandDialog(position: Int) {
         val binding = LayoutRenameDialogBinding.inflate(layoutInflater)
         val packageName = appsAdapter.getItem(position)?.packageName
-        val hasHintName = appsAdapter.getItem(position)?.hintName.isNullOrBlank()
+        val hasHintName = appsAdapter.getItem(position)?.hasHintName() ?: false
         val renameField = binding.renameField.apply {
             ViewCompat.setBackgroundTintList(this, ColorStateList.valueOf(PreferenceHelper.accent))
             hint = packageName?.let { PreferenceHelper.getLabel(it) }
@@ -418,7 +412,7 @@ class AppListFragment : GenericPageFragment() {
         with(AlertDialog.Builder(requireContext())) {
             setView(binding.root)
             setTitle(R.string.dialog_title_shorthand)
-            if (! hasHintName) {
+            if (hasHintName) {
                 setNeutralButton(R.string.action_web_provider_remove) { _, _ ->
                     appsAdapter.getItem(position).apply {
                         this?.hintName = ""

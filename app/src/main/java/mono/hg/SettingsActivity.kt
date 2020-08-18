@@ -66,20 +66,15 @@ class SettingsActivity : AppCompatActivity(), BackHandlerInterface,
         }
 
         setSupportActionBar(toolbar)
-
-        if (supportActionBar != null) {
-            supportActionBar !!.setDisplayHomeAsUpEnabled(true)
-        }
+        supportActionBar?.setDisplayHomeAsUpEnabled(true)
 
         if (savedInstanceState == null) {
-            supportActionBar !!.title = getString(R.string.title_activity_settings)
+            supportActionBar?.title = getString(R.string.title_activity_settings)
             ViewUtils.setFragment(supportFragmentManager, BasePreference(), "settings")
         } else {
             fragmentTitle = savedInstanceState.getCharSequence("title")
                 ?: getString(R.string.title_activity_settings)
-            if (supportActionBar != null) {
-                supportActionBar !!.title = fragmentTitle
-            }
+            supportActionBar?.title = fragmentTitle
         }
     }
 
@@ -91,16 +86,12 @@ class SettingsActivity : AppCompatActivity(), BackHandlerInterface,
     override fun onBackPressed() {
         if (selectedFragment == null || ! selectedFragment !!.onBackPressed()) {
             // Selected fragment did not consume the back press event.
-            if (supportActionBar != null) {
-                if (supportFragmentManager.findFragmentByTag(
-                        "settings"
-                    ) is BasePreference
-                ) {
-                    supportActionBar !!.title = getString(R.string.title_activity_settings)
+            supportActionBar?.title =
+                if (supportFragmentManager.findFragmentByTag("settings") is BasePreference) {
+                    getString(R.string.title_activity_settings)
                 } else {
-                    supportActionBar !!.title = fragmentTitle
+                    fragmentTitle
                 }
-            }
             super.onBackPressed()
         }
     }
@@ -111,16 +102,12 @@ class SettingsActivity : AppCompatActivity(), BackHandlerInterface,
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
         if (item.itemId == android.R.id.home) {
-            if (supportActionBar != null) {
-                if (supportFragmentManager.findFragmentByTag(
-                        "settings"
-                    ) is BasePreference
-                ) {
-                    supportActionBar !!.title = getString(R.string.title_activity_settings)
+            supportActionBar?.title =
+                if (supportFragmentManager.findFragmentByTag("settings") is BasePreference) {
+                    getString(R.string.title_activity_settings)
                 } else {
-                    supportActionBar !!.title = fragmentTitle
+                    fragmentTitle
                 }
-            }
             super.onBackPressed()
             ActivityServiceUtils.hideSoftKeyboard(this)
             return true
@@ -163,9 +150,7 @@ class SettingsActivity : AppCompatActivity(), BackHandlerInterface,
             .commit()
 
         // Update the Activity's action bar
-        if (supportActionBar != null) {
-            supportActionBar !!.title = fragmentTitle
-        }
+        supportActionBar?.title = fragmentTitle
         return true
     }
 }
