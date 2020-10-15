@@ -2,6 +2,7 @@ package mono.hg.utils
 
 import android.annotation.TargetApi
 import android.app.Activity
+import android.content.DialogInterface
 import android.content.Intent
 import android.os.Build
 import android.view.View
@@ -10,15 +11,23 @@ import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.view.WindowManager
 import androidx.annotation.RequiresApi
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
+import androidx.appcompat.widget.AppCompatSeekBar
 import androidx.appcompat.widget.PopupMenu
+import androidx.core.content.ContextCompat
+import androidx.core.graphics.BlendModeColorFilterCompat
+import androidx.core.graphics.BlendModeCompat
+import androidx.core.graphics.drawable.DrawableCompat
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.FragmentManager
 import androidx.recyclerview.widget.RecyclerView
+import com.google.android.material.progressindicator.ProgressIndicator
 import mono.hg.R
 import mono.hg.adapters.AppAdapter
 import mono.hg.helpers.PreferenceHelper
+import mono.hg.models.App
 
 /**
  * Utils class handling transformation of views relating to the launcher.
@@ -26,6 +35,8 @@ import mono.hg.helpers.PreferenceHelper
  * Generally, most misc. view-handling is also stored here.
  */
 object ViewUtils {
+    private const val SHORTCUT_MENU_GROUP = 247
+
     /**
      * Hides the status bar from the current activity.
      *
@@ -179,6 +190,43 @@ object ViewUtils {
     }
 
     /**
+     * Creates a [PopupMenu] used when long-pressing an app, mostly
+     * in a list. This PopupMenu is dynamically modified during runtime,
+     * but otherwise inflates from [R.menu.menu_app].
+     *
+     * @param activity      The foreground activity, where [focusedView] exists.
+     * @param focusedView   The view to anchor the PopupMenu.
+     * @param app           The app used as a context for this PopupMenu.
+     *
+     * @return PopupMenu relating to the app.
+     */
+    fun createAppMenu(activity: Activity, focusedView: View, app: App): PopupMenu {
+        return PopupMenu(activity, focusedView).apply {
+            inflate(R.menu.menu_app)
+
+            val isPinned = PreferenceHelper.getPinnedApps().contains(app.userPackageName)
+
+            menu.addSubMenu(1, SHORTCUT_MENU_GROUP, 0, R.string.action_shortcuts)
+
+            // Hide 'pin' if the app is already pinned or isPinned is set.
+            menu.findItem(R.id.action_pin).isVisible = ! isPinned
+
+            // We can't hide an app from the favourites panel.
+            menu.findItem(R.id.action_hide).isVisible = ! isPinned
+            menu.findItem(R.id.action_shorthand).isVisible = ! isPinned
+
+            // Only show the 'unpin' option if isPinned is set.
+            menu.findItem(R.id.action_unpin).isVisible = isPinned
+
+            // Show uninstall menu if the app is not a system app.
+            menu.findItem(R.id.action_uninstall).isVisible = (! AppUtils.isSystemApp(
+                activity.packageManager,
+                app.packageName
+            ) && app.user == UserUtils(activity).currentSerial)
+        }
+    }
+
+    /**
      * A helper function used to switch the current theme of the activity.
      *
      * This function calls [switchThemeLegacy] for API level lower than 17 (Jelly Bean MR1),
@@ -261,5 +309,64 @@ object ViewUtils {
             activity.overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out)
         }
     }
+}
 
+/**
+ * Extension function for [AppCompatSeekBar].
+ * Applies [PreferenceHelper.accent] to the thumb and progress drawable.
+ */
+fun AppCompatSeekBar.applyAccent() {
+    if (Utils.sdkIsBelow(16)) {
+        // Android 4.0.x have no proper way to set the thumb color.
+        // So, we have to workaround this by getting a drawable, coloring it,
+        // and then applying said drawable as the thumb.
+        ContextCompat.getDrawable(context, androidx.appcompat.R.drawable.abc_seekbar_thumb_material)
+            ?.let { DrawableCompat.wrap(it) }.also {
+                thumb = it
+                it?.let { thumb -> DrawableCompat.setTint(thumb, PreferenceHelper.accent) }
+            }
+    } else {
+        DrawableCompat.setTint(thumb, PreferenceHelper.accent)
+    }
+
+    progressDrawable.colorFilter =
+        BlendModeColorFilterCompat.createBlendModeColorFilterCompat(
+            PreferenceHelper.accent,
+            BlendModeCompat.SRC_ATOP
+        )
+}
+
+/**
+ * Extension function for [ProgressIndicator] that handles hiding for API levels lower than 17.
+ */
+fun ProgressIndicator.compatHide() {
+    if (Utils.sdkIsAround(17)) {
+        hide()
+    } else {
+        visibility = View.INVISIBLE
+    }
+}
+
+/**
+ * Extension function for [ProgressIndicator]
+ * that handles showing the ProgressIndicator for API levels lower than 17.
+ */
+fun ProgressIndicator.compatShow() {
+    if (Utils.sdkIsAround(17)) {
+        show()
+    } else {
+        visibility = View.VISIBLE
+    }
+}
+
+/**
+ * Extension function for [AlertDialog].
+ * Applies [PreferenceHelper.darkAccent] to all the dialogue buttons.
+ */
+fun AlertDialog.applyAccent() {
+    with(PreferenceHelper.darkAccent) {
+        getButton(DialogInterface.BUTTON_NEUTRAL).setTextColor(this)
+        getButton(DialogInterface.BUTTON_NEGATIVE).setTextColor(this)
+        getButton(DialogInterface.BUTTON_POSITIVE).setTextColor(this)
+    }
 }

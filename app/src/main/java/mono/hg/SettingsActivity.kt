@@ -4,7 +4,6 @@ import android.content.res.Configuration
 import android.content.res.Configuration.UI_MODE_NIGHT_NO
 import android.os.Bundle
 import android.view.MenuItem
-import android.view.View
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.Toolbar
 import androidx.fragment.app.FragmentTransaction
@@ -17,18 +16,15 @@ import mono.hg.preferences.BasePreference
 import mono.hg.utils.ActivityServiceUtils
 import mono.hg.utils.Utils
 import mono.hg.utils.ViewUtils
-import mono.hg.wrappers.BackHandledFragment
-import mono.hg.wrappers.BackHandledFragment.BackHandlerInterface
-
+import mono.hg.utils.compatHide
 
 /**
  * Activity hosting all of preference fragments.
  *
  * This activity can be called through 'Additional setting' in the System settings as well.
  */
-class SettingsActivity : AppCompatActivity(), BackHandlerInterface,
+class SettingsActivity : AppCompatActivity(),
     PreferenceFragmentCompat.OnPreferenceStartFragmentCallback {
-    private var selectedFragment: BackHandledFragment? = null
     private var fragmentTitle: CharSequence? = null
     private lateinit var binding: ActivitySettingsBinding
     private lateinit var toolbar: Toolbar
@@ -83,31 +79,8 @@ class SettingsActivity : AppCompatActivity(), BackHandlerInterface,
         outState.putCharSequence("title", fragmentTitle)
     }
 
-    override fun onBackPressed() {
-        if (selectedFragment == null || ! selectedFragment !!.onBackPressed()) {
-            // Selected fragment did not consume the back press event.
-            supportActionBar?.title =
-                if (supportFragmentManager.findFragmentByTag("settings") is BasePreference) {
-                    getString(R.string.title_activity_settings)
-                } else {
-                    fragmentTitle
-                }
-            super.onBackPressed()
-        }
-    }
-
-    override fun setSelectedFragment(backHandledFragment: BackHandledFragment?) {
-        this.selectedFragment = backHandledFragment
-    }
-
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
         if (item.itemId == android.R.id.home) {
-            supportActionBar?.title =
-                if (supportFragmentManager.findFragmentByTag("settings") is BasePreference) {
-                    getString(R.string.title_activity_settings)
-                } else {
-                    fragmentTitle
-                }
             super.onBackPressed()
             ActivityServiceUtils.hideSoftKeyboard(this)
             return true
@@ -152,29 +125,5 @@ class SettingsActivity : AppCompatActivity(), BackHandlerInterface,
         // Update the Activity's action bar
         supportActionBar?.title = fragmentTitle
         return true
-    }
-}
-
-/**
- * Extension function for [ProgressIndicator]
- * that handles hiding for API levels lower than 17.
- */
-fun ProgressIndicator.compatHide() {
-    if (Utils.sdkIsAround(17)) {
-        hide()
-    } else {
-        visibility = View.INVISIBLE
-    }
-}
-
-/**
- * Extension function for [ProgressIndicator]
- * that handles showing the ProgressIndicator for API levels lower than 17.
- */
-fun ProgressIndicator.compatShow() {
-    if (Utils.sdkIsAround(17)) {
-        show()
-    } else {
-        visibility = View.VISIBLE
     }
 }

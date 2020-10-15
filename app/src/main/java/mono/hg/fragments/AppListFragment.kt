@@ -2,7 +2,6 @@ package mono.hg.fragments
 
 import android.content.BroadcastReceiver
 import android.content.Context
-import android.content.DialogInterface
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.LauncherApps
@@ -11,10 +10,12 @@ import android.content.res.ColorStateList
 import android.net.Uri
 import android.os.Bundle
 import android.util.SparseArray
+import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.Menu
 import android.view.View
 import android.view.ViewGroup
+import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.widget.PopupMenu
 import androidx.core.view.ViewCompat
@@ -33,15 +34,19 @@ import mono.hg.adapters.AppAdapter
 import mono.hg.databinding.FragmentAppListBinding
 import mono.hg.databinding.LayoutRenameDialogBinding
 import mono.hg.databinding.UiLoadProgressBinding
+import mono.hg.helpers.LauncherIconHelper
 import mono.hg.helpers.PreferenceHelper
 import mono.hg.listeners.SimpleScrollListener
 import mono.hg.models.App
+import mono.hg.receivers.PackageChangesReceiver
 import mono.hg.utils.AppUtils
 import mono.hg.utils.UserUtils
 import mono.hg.utils.Utils
 import mono.hg.utils.ViewUtils
+import mono.hg.utils.applyAccent
 import mono.hg.views.CustomGridLayoutManager
 import mono.hg.views.TogglingLinearLayoutManager
+import mono.hg.wrappers.DisplayNameComparator
 import mono.hg.wrappers.ItemOffsetDecoration
 import java.util.*
 
@@ -53,12 +58,12 @@ class AppListFragment : GenericPageFragment() {
     /*
      * List containing installed apps.
      */
-    private val appsList = ArrayList<App?>()
+    private val appsList = ArrayList<App>()
 
     /*
      * Adapter for installed apps.
      */
-    private val appsAdapter = AppAdapter(appsList)
+    private val appsAdapter = AppAdapter(ArrayList<App>())
 
     /*
      * RecyclerView for app list.
@@ -156,13 +161,12 @@ class AppListFragment : GenericPageFragment() {
         // Add long click listener to apps in the apps list.
         // This shows a menu to manage the selected app.
         appsAdapter.addListener(FlexibleAdapter.OnItemLongClickListener { position ->
-            val app = appsAdapter.getItem(position)
-
-            appsRecyclerView.findViewHolderForLayoutPosition(position)?.itemView?.let {
-                createAppMenu(
-                    it,
-                    app
-                )
+            appsAdapter.getItem(position)?.apply {
+                appsRecyclerView.findViewHolderForLayoutPosition(position)?.itemView?.findViewById<TextView>(
+                    R.id.item_name
+                )?.let {
+                    createAppMenu(it, this)
+                }
             }
         })
 
@@ -210,7 +214,7 @@ class AppListFragment : GenericPageFragment() {
         }
 
         // Reset the app list filter.
-        appsAdapter.resetFilter()
+        resetAppFilter()
     }
 
     override fun isAcceptingSearch(): Boolean {
@@ -218,12 +222,14 @@ class AppListFragment : GenericPageFragment() {
     }
 
     override fun commitSearch(query: String) {
-        appsAdapter.setFilter(query)
-        appsAdapter.filterItems()
+        if (appsAdapter.hasNewFilter(query)) {
+            appsAdapter.setFilter(query)
+            appsAdapter.filterItems(appsList)
+        }
     }
 
     override fun resetSearch() {
-        appsAdapter.resetFilter()
+        resetAppFilter()
     }
 
     override fun launchPreselection(): Boolean {
@@ -243,122 +249,110 @@ class AppListFragment : GenericPageFragment() {
      * @param view     View for the PopupMenu to anchor to.
      * @param app      App object selected from the list.
      */
-    private fun createAppMenu(view: View, app: App?) {
-        val packageName = app !!.packageName
+    private fun createAppMenu(view: View, app: App) {
+        val packageName = app.packageName
         val user = app.user
-
         val packageNameUri = Uri.fromParts("package", AppUtils.getPackageName(packageName), null)
         val shortcutMap = SparseArray<String>()
         val position = appsAdapter.getGlobalPositionOf(app)
 
-        // Inflate the app menu.
-        appMenu = PopupMenu(requireContext(), view)
-        appMenu !!.menuInflater.inflate(R.menu.menu_app, appMenu !!.menu)
-        appMenu !!.menu.addSubMenu(1, SHORTCUT_MENU_GROUP, 0, R.string.action_shortcuts)
-
-        // Hide 'pin' if the app is already pinned or isPinned is set.
-        appMenu !!.menu.findItem(R.id.action_pin).isVisible =
-            ! getLauncherActivity().isPinned(app)
-
-        // Only show the 'unpin' option if isPinned is set.
-        appMenu !!.menu.findItem(R.id.action_unpin).isVisible = false
-
-        // Show uninstall menu if the app is not a system app.
-        appMenu !!.menu.findItem(R.id.action_uninstall).isVisible =
-            (! AppUtils.isSystemApp(manager, packageName)
-                    && app.user == userUtils !!.currentSerial)
-
-        // Inflate app shortcuts.
-        if (Utils.sdkIsAround(25)) {
-            var menuId = SHORTCUT_MENU_GROUP
-            AppUtils.getShortcuts(launcherApps, packageName)?.forEach {
-                shortcutMap.put(menuId, it.id)
-                appMenu !!.menu
-                    .findItem(SHORTCUT_MENU_GROUP)
-                    .subMenu
-                    .add(SHORTCUT_MENU_GROUP, menuId, Menu.NONE, it.shortLabel)
-                menuId ++
-            }
-            if (shortcutMap.size() == 0) {
-                appMenu !!.menu.getItem(0).isVisible = false
-            }
-        } else {
-            appMenu !!.menu.getItem(0).isVisible = false
-        }
-
-        appMenu !!.show()
-
-        appMenu !!.setOnMenuItemClickListener { item ->
-            when (item.itemId) {
-                R.id.action_pin -> {
-                    getLauncherActivity().pinAppHere(app.userPackageName, user)
+        appMenu = ViewUtils.createAppMenu(requireActivity(), view, app).apply {
+            // Inflate app shortcuts.
+            if (Utils.sdkIsAround(25)) {
+                var menuId = SHORTCUT_MENU_GROUP
+                AppUtils.getShortcuts(launcherApps, packageName)?.forEach {
+                    shortcutMap.put(menuId, it.id)
+                    menu
+                        .findItem(SHORTCUT_MENU_GROUP)
+                        .subMenu
+                        .add(SHORTCUT_MENU_GROUP, menuId, Menu.NONE, it.shortLabel)
+                    menuId ++
                 }
-                R.id.action_info -> AppUtils.openAppDetails(requireActivity(), packageName, user)
-                R.id.action_uninstall -> AppUtils.uninstallApp(requireActivity(), packageNameUri)
-                R.id.action_shorthand -> buildShorthandDialog(position)
-                R.id.action_hide -> {
-                    // Add the app's package name to the exclusion list.
-                    excludedAppsList.add(app.userPackageName)
-                    PreferenceHelper.update("hidden_apps", excludedAppsList)
+                menu.getItem(0).isVisible = shortcutMap.size() > 0
+            } else {
+                menu.getItem(0).isVisible = false
+            }
 
-                    // Reload the app list!
-                    appsList.remove(appsAdapter.getItem(position))
-                    appsAdapter.removeItem(position)
-                }
-                else ->                         // Catch click actions from the shortcut menu group.
-                    if (item.groupId == SHORTCUT_MENU_GROUP) {
-                        userUtils?.getUser(user)?.let {
-                            AppUtils.launchShortcut(
-                                it,
-                                launcherApps,
-                                packageName,
-                                shortcutMap[item.itemId]
-                            )
+            gravity = Gravity.NO_GRAVITY
+            show()
+            setOnMenuItemClickListener { item ->
+                when (item.itemId) {
+                    R.id.action_pin -> getLauncherActivity().pinAppHere(app.userPackageName, user)
+                    R.id.action_info -> AppUtils.openAppDetails(
+                        requireActivity(),
+                        packageName,
+                        user
+                    )
+                    R.id.action_uninstall -> AppUtils.uninstallApp(
+                        requireActivity(),
+                        packageNameUri
+                    )
+                    R.id.action_shorthand -> buildShorthandDialog(position)
+                    R.id.action_hide -> hideApp(position)
+                    else -> {
+                        // Catch click actions from the shortcut menu group.
+                        if (item.groupId == SHORTCUT_MENU_GROUP) {
+                            userUtils?.getUser(user)?.let {
+                                AppUtils.launchShortcut(
+                                    it,
+                                    launcherApps,
+                                    packageName,
+                                    shortcutMap[item.itemId]
+                                )
+                            }
                         }
                     }
+                }
+                true
             }
-            true
         }
     }
 
     private fun registerBroadcast() {
         packageBroadcastReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
-                val launchIntent = intent.getStringExtra("package")?.let {
+                val packageName = intent.getStringExtra("package")
+                val action = intent.getIntExtra("action", 42)
+                val launchIntent = packageName?.let {
                     requireActivity().packageManager.getLaunchIntentForPackage(
                         it
                     )
                 }
 
-                launchIntent?.apply {
+                launchIntent?.component?.apply {
                     val hasLauncherCategory = launchIntent.hasCategory(Intent.CATEGORY_LAUNCHER)
 
+                    val user = userUtils?.currentSerial ?: 0
+                    val componentName = this.flattenToString()
+
+                    // If the intent has no launcher category, then it may mean that
+                    // this intent is meant for an uninstalled/removed package,
+                    // or it can be meant for an app without a launcher activity.
+                    // Either way, we don't want to fetch anything if that is the case.
                     if (hasLauncherCategory && appsAdapter.hasFinishedLoading()) {
+                        // Add our new app to the list.
                         lifecycleScope.launch {
-                            if (fetchAppsJob !!.isCompleted) {
-                                appsAdapter.finishedLoading(false)
-                                fetchApps()
+                            var newList: List<App>
+                            withContext(Dispatchers.Default) {
+                                newList = addApp(componentName, user)
                             }
+                            appsAdapter.updateDataSet(newList)
                         }
                     }
                 } ?: run {
-                    // Apps being uninstalled will have no launch intent,
-                    // therefore it's better if we get the entire list again.
-                    if (appsAdapter.hasFinishedLoading()) {
-                        lifecycleScope.launch {
-                            if (fetchAppsJob !!.isCompleted) {
-                                appsAdapter.finishedLoading(false)
-                                fetchApps()
-                            }
+                    // If the app is being uninstalled, it will not have
+                    // a launch intent, so it's safe to remove it from the list.
+                    if (action == PackageChangesReceiver.PACKAGE_REMOVED) {
+                        packageName?.apply {
+                            appsAdapter.updateDataSet(appsAdapter.currentItems.filterNot {
+                                it.packageName.contains(this)
+                            })
                         }
                     }
                 }
 
                 // We should recount here, regardless of whether we update the list or not.
-                PreferenceHelper.update(
-                    "package_count",
-                    AppUtils.countInstalledPackage(requireActivity().packageManager)
-                )
+                AppUtils.updatePackageCount(requireActivity().packageManager)
             }
         }
 
@@ -388,11 +382,78 @@ class AppListFragment : GenericPageFragment() {
             var newList: List<App>
             withContext(Dispatchers.Default) {
                 newList = AppUtils.loadApps(requireActivity(), hideHidden = true, shouldSort = true)
+                appsList.addAll(newList)
             }
 
             appsAdapter.updateDataSet(newList)
-            appsAdapter.recyclerView.setItemViewCacheSize(newList.size)
             appsAdapter.finishedLoading(true)
+        }
+    }
+
+    private fun hideApp(positionInAdapter: Int) {
+        appsAdapter.getItem(positionInAdapter)?.apply {
+            // Add the app's package name to the exclusion list.
+            excludedAppsList.add(userPackageName)
+            PreferenceHelper.update("hidden_apps", excludedAppsList)
+
+            // Reload the app list!
+            appsAdapter.removeItem(positionInAdapter)
+        }
+    }
+
+    private fun addApp(componentName: String, user: Long): List<App> {
+        with (appsAdapter.currentItems.toMutableList()) {
+            // If there's an app with a matching componentName,
+            // then it's probably the same app. Update that entry instead
+            // of adding a new app.
+            this.find { it.packageName == componentName }?.apply {
+                appName = AppUtils.getPackageLabel(
+                    requireActivity().packageManager,
+                    componentName
+                )
+                userPackageName = AppUtils.appendUser(user, componentName)
+                icon = LauncherIconHelper.getIcon(
+                    requireActivity(),
+                    componentName,
+                    user,
+                    PreferenceHelper.shouldHideIcon()
+                )
+            } ?: run {
+                App(componentName, user).apply {
+                    appName = AppUtils.getPackageLabel(
+                        requireActivity().packageManager,
+                        componentName
+                    )
+                    userPackageName = AppUtils.appendUser(user, componentName)
+                    icon = LauncherIconHelper.getIcon(
+                        requireActivity(),
+                        componentName,
+                        user,
+                        PreferenceHelper.shouldHideIcon()
+                    )
+                }.also {
+                    // We need to use currentItems here because
+                    // using the default list would basically create a filter.
+                    return this.apply {
+                        // Don't add the new app if we already have it.
+                        // This probably caused by two receivers firing at once.
+                        if (! this.contains(it)) {
+                            add(it)
+
+                            // Re-sort to make sure we have the list in proper order.
+                            sortWith(DisplayNameComparator(PreferenceHelper.isListInverted))
+                        }
+                    }
+                }
+            }
+            return this
+        }
+    }
+
+    private fun resetAppFilter() {
+        if (appsAdapter.hasFilter()) {
+            appsAdapter.setFilter("")
+            appsAdapter.filterItems(appsList)
         }
     }
 
@@ -414,10 +475,7 @@ class AppListFragment : GenericPageFragment() {
             setTitle(R.string.dialog_title_shorthand)
             if (hasHintName) {
                 setNeutralButton(R.string.action_web_provider_remove) { _, _ ->
-                    appsAdapter.getItem(position).apply {
-                        this?.hintName = ""
-                    }
-
+                    appsAdapter.getItem(position)?.apply { hintName = "" }
                     packageName?.let { PreferenceHelper.updateLabel(it, "", true) }
                 }
             }
@@ -430,21 +488,14 @@ class AppListFragment : GenericPageFragment() {
 
                 // Update the specified item.
                 if (newLabel.isNotBlank()) {
-                    appsAdapter.getItem(position).apply {
-                        this?.hintName = newLabel
-                    }
-
+                    appsAdapter.getItem(position)?.apply { hintName = newLabel }
                     packageName?.let { PreferenceHelper.updateLabel(it, newLabel, false) }
                 }
             }
 
             create().apply {
                 show()
-                with(PreferenceHelper.darkAccent) {
-                    getButton(DialogInterface.BUTTON_NEUTRAL).setTextColor(this)
-                    getButton(DialogInterface.BUTTON_NEGATIVE).setTextColor(this)
-                    getButton(DialogInterface.BUTTON_POSITIVE).setTextColor(this)
-                }
+                applyAccent()
             }
         }
     }

@@ -117,17 +117,17 @@ object AppUtils {
         activity: Activity, user: Long, componentName: String,
         adapter: AppAdapter, list: MutableList<App>
     ) {
-        val icon = LauncherIconHelper.getIcon(activity, componentName, user, false)
-        val app = icon?.let { App(it, componentName, user) }.apply {
-            this?.userPackageName = if (user != UserUtils(activity).currentSerial) {
-                appendUser(user, componentName)
-            } else {
-                componentName
+        LauncherIconHelper.getIcon(activity, componentName, user, false)?.apply {
+            App(this, componentName, user).apply {
+                userPackageName = if (user != UserUtils(activity).currentSerial) {
+                    appendUser(user, componentName)
+                } else {
+                    componentName
+                }
+            }.also {
+                list.add(it)
+                adapter.updateDataSet(list, false)
             }
-        }
-        app?.let {
-            list.add(it)
-            adapter.updateDataSet(list, false)
         }
     }
 
@@ -282,9 +282,10 @@ object AppUtils {
      */
     fun getPackageLabel(manager: PackageManager, componentName: String): String? {
         return try {
-            manager.getApplicationInfo(getPackageName(componentName), PackageManager.GET_META_DATA)
-                .loadLabel(manager)
-                .toString()
+            ComponentName.unflattenFromString(componentName)?.let {
+                manager.getActivityInfo(it, PackageManager.GET_META_DATA).loadLabel(manager)
+                    .toString()
+            }
         } catch (e: PackageManager.NameNotFoundException) {
             Utils.sendLog(LogLevel.ERROR, "Unable to find label for $componentName")
             ""
@@ -311,14 +312,18 @@ object AppUtils {
      * @return boolean True if there is a change in number.
      */
     fun hasNewPackage(packageManager: PackageManager): Boolean {
-        if (PreferenceHelper.preference.getInt("package_count", 0) != countInstalledPackage(
-                packageManager
-            )
-        ) {
-            PreferenceHelper.update("package_count", countInstalledPackage(packageManager))
-            return true
-        }
-        return false
+        return PreferenceHelper.preference.getInt("package_count", 0) != countInstalledPackage(
+            packageManager
+        )
+    }
+
+    /**
+     * Updates the internal package count of the launcher.
+     *
+     * @param packageManager PackageManager used to count the installed packages.
+     */
+    fun updatePackageCount(packageManager: PackageManager) {
+        PreferenceHelper.update("package_count", countInstalledPackage(packageManager))
     }
 
     /**
@@ -369,7 +374,7 @@ object AppUtils {
                 val isHidden = (PreferenceHelper.exclusionList.contains(userPackageName))
                 if (! componentName.contains(activity.packageName) && (! isHidden || ! hideHidden)) {
                     val appName = activityInfo.label.toString()
-                    val app = App(appName, componentName, false, user)
+                    val app = App(appName, componentName, user)
                     app.hintName = PreferenceHelper.getLabel(userPackageName)
                     app.userPackageName = userPackageName
                     app.icon = LauncherIconHelper.getIcon(
@@ -406,7 +411,7 @@ object AppUtils {
             val isHidden = PreferenceHelper.exclusionList.contains(componentName)
             if (! componentName.contains(activity.packageName) && (! isHidden || ! hideHidden)) {
                 val appName = it.loadLabel(manager).toString()
-                val app = App(appName, componentName, false, userUtils.currentSerial)
+                val app = App(appName, componentName, userUtils.currentSerial)
                 app.hintName = PreferenceHelper.getLabel(componentName)
                 app.userPackageName = componentName
                 app.icon = LauncherIconHelper.getIcon(

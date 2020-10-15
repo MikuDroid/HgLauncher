@@ -12,17 +12,27 @@ import android.content.Intent
 open class PackageChangesReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != null && intent.data != null) {
+            var packageAction = - 1
+            val isReplacing = intent.getBooleanExtra(Intent.EXTRA_REPLACING, false)
             val packageName = intent.data?.encodedSchemeSpecificPart ?: ""
-            val requireBroadcast = intent.action == "android.intent.action.PACKAGE_ADDED" ||
-                    intent.action == "android.intent.action.PACKAGE_FULLY_REMOVED" ||
-                    intent.action == "android.intent.action.PACKAGE_REMOVED" ||
-                    intent.action == "android.intent.action.PACKAGE_CHANGED" ||
-                    intent.action == "android.intent.action.PACKAGE_REPLACED"
+
+            packageAction = if (isReplacing) {
+                // If Intent.EXTRA_REPLACING is detected, then the action
+                // should be updating, so don't use PACKAGE_REMOVED.
+                // https://developer.android.com/reference/android/content/Intent.html#EXTRA_REPLACING
+                PACKAGE_UPDATED
+            } else when (intent.action) {
+                Intent.ACTION_PACKAGE_REPLACED -> PACKAGE_UPDATED
+                Intent.ACTION_PACKAGE_ADDED -> PACKAGE_INSTALLED
+                Intent.ACTION_PACKAGE_REMOVED, Intent.ACTION_PACKAGE_FULLY_REMOVED -> PACKAGE_REMOVED
+                Intent.ACTION_PACKAGE_CHANGED -> PACKAGE_MISC
+                else -> - 1
+            }
 
             // Receive intent from broadcast and let the Pages know they may need refresh.
-            if (requireBroadcast && ! packageName.contains(context.packageName)) {
+            if (packageAction != - 1 && ! packageName.contains(context.packageName)) {
                 Intent().apply {
-                    putExtra("action", intent.action)
+                    putExtra("action", packageAction)
                     putExtra("package", packageName)
                     action = "mono.hg.PACKAGE_CHANGE_BROADCAST"
                 }.also {
@@ -30,5 +40,12 @@ open class PackageChangesReceiver : BroadcastReceiver() {
                 }
             }
         }
+    }
+
+    companion object {
+        const val PACKAGE_REMOVED = 0
+        const val PACKAGE_INSTALLED = 1
+        const val PACKAGE_UPDATED = 2
+        const val PACKAGE_MISC = 42
     }
 }

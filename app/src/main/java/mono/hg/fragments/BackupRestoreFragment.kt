@@ -12,6 +12,8 @@ import android.view.ViewGroup
 import android.widget.AdapterView
 import android.widget.EditText
 import android.widget.Toast
+import androidx.activity.OnBackPressedCallback
+import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -19,12 +21,11 @@ import kotlinx.coroutines.withContext
 import mono.hg.R
 import mono.hg.SettingsActivity
 import mono.hg.adapters.FileFolderAdapter
-import mono.hg.compatHide
-import mono.hg.compatShow
 import mono.hg.databinding.FragmentBackupRestoreBinding
 import mono.hg.models.FileFolder
 import mono.hg.utils.BackupRestoreUtils
-import mono.hg.wrappers.BackHandledFragment
+import mono.hg.utils.compatHide
+import mono.hg.utils.compatShow
 import java.io.File
 import java.util.*
 import kotlin.Comparator
@@ -33,7 +34,7 @@ import kotlin.collections.ArrayList
 /**
  * A Fragment that displays both backup and restore options.
  */
-class BackupRestoreFragment : BackHandledFragment() {
+class BackupRestoreFragment : Fragment() {
     private var binding: FragmentBackupRestoreBinding? = null
     private val fileFoldersList = ArrayList<FileFolder>()
     private var fileFolderAdapter: FileFolderAdapter? = null
@@ -54,8 +55,31 @@ class BackupRestoreFragment : BackHandledFragment() {
         binding = null
     }
 
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+
+        // We are using the back press to traverse back
+        // in the path, so don't let the activity consume the event
+        // unless we're already at root path.
+        activity?.onBackPressedDispatcher?.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                @Suppress("DEPRECATION")
+                if (currentPath?.path != Environment.getExternalStorageDirectory().path) {
+                    currentPath?.parent?.apply {
+                        currentPath = File(this)
+                        traverseStorage(currentPath)
+                    }
+                } else {
+                    isEnabled = false
+                    activity?.onBackPressed()
+                }
+            }
+        })
+    }
+
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         isInRestore = arguments?.getBoolean("isRestore", false) ?: false
+
         super.onCreate(savedInstanceState)
 
         /*
@@ -63,11 +87,11 @@ class BackupRestoreFragment : BackHandledFragment() {
          * This is needed because the preference library does not supply toolbars
          * for fragments that it isn't managing.
          */
-        (requireActivity() as SettingsActivity).supportActionBar.apply {
+        (requireActivity() as SettingsActivity).supportActionBar?.apply {
             if (isInRestore) {
-                this?.setTitle(R.string.pref_header_restore)
+                this.setTitle(R.string.pref_header_restore)
             } else {
-                this?.setTitle(R.string.pref_header_backup)
+                this.setTitle(R.string.pref_header_backup)
             }
         }
 
@@ -111,17 +135,6 @@ class BackupRestoreFragment : BackHandledFragment() {
         }
     }
 
-    override fun onBackPressed(): Boolean {
-        @Suppress("DEPRECATION")
-        return if (currentPath?.path != Environment.getExternalStorageDirectory().path) {
-            currentPath = File(currentPath?.parent)
-            traverseStorage(currentPath)
-            true
-        } else {
-            false
-        }
-    }
-
     override fun onCreateOptionsMenu(menu: Menu, inflater: MenuInflater) {
         with(menu) {
             clear()
@@ -133,10 +146,10 @@ class BackupRestoreFragment : BackHandledFragment() {
     }
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
-        when (item.itemId) {
+        return when (item.itemId) {
             R.id.home -> {
                 requireActivity().onBackPressed()
-                return true
+                true
             }
             1 -> {
                 // Send our backup signal!
@@ -163,12 +176,10 @@ class BackupRestoreFragment : BackHandledFragment() {
                     Toast.makeText(requireActivity(), R.string.backup_empty, Toast.LENGTH_SHORT)
                         .show()
                 }
-                return true
+                true
             }
-            else -> {
-            }
+            else -> super.onOptionsItemSelected(item)
         }
-        return super.onOptionsItemSelected(item)
     }
 
     // Open a directory and refresh fileFoldersList.
@@ -178,8 +189,8 @@ class BackupRestoreFragment : BackHandledFragment() {
         val contents: Array<File>?
         contents = if (isInRestore) {
             path?.listFiles { dir ->
-                (dir.name.toLowerCase(Locale.getDefault()).endsWith(".xml")
-                        || dir.isDirectory && ! dir.isFile)
+                (dir.name.toLowerCase(Locale.getDefault())
+                    .endsWith(".xml") || dir.isDirectory && ! dir.isFile)
             }
         } else {
             path?.listFiles()
@@ -190,6 +201,7 @@ class BackupRestoreFragment : BackHandledFragment() {
                     contents.filter { ! it.isHidden }
                         .forEach { fileFoldersList.add(FileFolder(it.name, it.isDirectory)) }
                 }
+
                 fileFoldersList.sortWith(Comparator { f1, f2 ->
                     if (f1.isFolder && ! f2.isFolder) {
                         - 1

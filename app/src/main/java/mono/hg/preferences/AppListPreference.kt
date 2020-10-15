@@ -9,6 +9,7 @@ import androidx.preference.ListPreference
 import androidx.preference.Preference
 import androidx.preference.PreferenceFragmentCompat
 import mono.hg.R
+import mono.hg.SettingsActivity
 import mono.hg.helpers.PreferenceHelper
 import mono.hg.utils.Utils
 import java.util.*
@@ -18,19 +19,24 @@ import java.util.*
  */
 @Keep
 class AppListPreference : PreferenceFragmentCompat() {
-    val RestartingListListener = Preference.OnPreferenceChangeListener { _, _ ->
-        PreferenceHelper.update("require_refresh", true)
-        true
-    }
-
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
         setPreferencesFromResource(R.xml.pref_app_list, rootKey)
     }
 
+    override fun onResume() {
+        super.onResume()
+
+        // Update the action bar title.
+        (requireActivity() as SettingsActivity).supportActionBar?.setTitle(R.string.pref_header_list)
+    }
+
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        findPreference<ListPreference>("icon_pack").apply {
-            this?.onPreferenceChangeListener = RestartingListListener
+        findPreference<ListPreference>("icon_pack")?.apply {
+            onPreferenceChangeListener = Preference.OnPreferenceChangeListener { _, _ ->
+                PreferenceHelper.update("require_refresh", true)
+                true
+            }
             setIconList(this)
         }
 

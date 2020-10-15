@@ -39,11 +39,13 @@ object PreferenceHelper {
     private var keep_last_search = false
     private var adaptive_shade = false
     private var windowbar_status_switch = false
+    private var widget_space_visible = true
     private var web_search_long_press = false
     private var use_grid_mode = false
     var isTesting = false
         private set
     private var was_alien = false
+    private var pinned_apps_list : String = ""
     private val label_list: MutableMap<String, String> = HashMap()
     private val provider_list: MutableMap<String, String> = HashMap()
     private val label_list_set = HashSet<String>()
@@ -56,13 +58,13 @@ object PreferenceHelper {
         private set
     var listBackground: String? = null
         private set
-    private lateinit var gesture_left_action: String
-    private lateinit var gesture_right_action: String
-    private lateinit var gesture_up_action: String
-    private lateinit var gesture_down_action: String
-    private lateinit var gesture_single_tap_action: String
-    private lateinit var gesture_double_tap_action: String
-    private lateinit var gesture_pinch_action: String
+    private var gesture_left_action: String = "none"
+    private var gesture_right_action: String = "none"
+    private var gesture_up_action: String = "none"
+    private var gesture_down_action: String = "none"
+    private var gesture_single_tap_action: String = "list"
+    private var gesture_double_tap_action: String = "none"
+    private var gesture_pinch_action: String = "none"
     var windowBarMode: String? = null
         private set
     private var widgets_list: ArrayList<String> = ArrayList()
@@ -127,6 +129,10 @@ object PreferenceHelper {
         return use_grid_mode
     }
 
+    fun widgetSpaceVisible(): Boolean {
+        return widget_space_visible
+    }
+
     fun wasAlien(): Boolean {
         return was_alien
     }
@@ -161,8 +167,7 @@ object PreferenceHelper {
             "ddg" -> "https://www.duckduckgo.com/?q=%s"
             "searx" -> "https://www.searx.me/?q=%s"
             "startpage" -> "https://www.startpage.com/do/search?query=%s"
-            else ->                 // We can't go here. Return an empty string just in case.
-                ""
+            else -> "" // We can't go here. Return an empty string just in case.
         }
     }
 
@@ -192,6 +197,10 @@ object PreferenceHelper {
         // Clear and update our Map.
         provider_list.clear()
         parseDelimitedSet(tempList, provider_list)
+    }
+
+    fun getPinnedApps(): String {
+        return pinned_apps_list
     }
 
     fun getProvider(id: String?): String? {
@@ -243,6 +252,16 @@ object PreferenceHelper {
         editor?.putInt(id, integer)?.apply()
     }
 
+    fun reset() {
+        editor?.clear()?.apply()
+
+        // We have to individually clear the collections here.
+        widgets_list.clear()
+        provider_list.clear()
+        label_list_set.clear()
+        label_list.clear()
+    }
+
     fun fetchPreference() {
         isTesting = preference.getBoolean("is_grandma", false)
         isNewUser = preference.getBoolean("is_new_user", true)
@@ -259,6 +278,7 @@ object PreferenceHelper {
         accent = preference.getInt("app_accent", - 49023) // The default accent in Int.
         darkAccent = ColorUtils.blendARGB(accent, Color.BLACK, 0.25f)
         darkerAccent = ColorUtils.blendARGB(accent, Color.BLACK, 0.4f)
+        widget_space_visible = preference.getBoolean("widget_space_visible", true)
         web_search_enabled = preference.getBoolean("web_search_enabled", true)
         web_search_long_press = preference.getBoolean("web_search_long_press", false)
         search_provider_set = preference.getString("search_provider", "none")
@@ -282,6 +302,7 @@ object PreferenceHelper {
         gestureHandler = ComponentName.unflattenFromString(
             preference.getString("gesture_handler", "none") ?: "none"
         )
+        pinned_apps_list = preference.getString("pinned_apps_list", "") ?: ""
         exclusionList = preference.getStringSet("hidden_apps", HashSet()) as HashSet<String>
         val tempLabelList = preference.getStringSet("label_list", HashSet()) as HashSet<String>
         parseDelimitedSet(

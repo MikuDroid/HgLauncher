@@ -17,12 +17,12 @@ import kotlinx.coroutines.withContext
 import mono.hg.R
 import mono.hg.SettingsActivity
 import mono.hg.adapters.HiddenAppAdapter
-import mono.hg.compatHide
-import mono.hg.compatShow
 import mono.hg.databinding.FragmentHiddenAppsBinding
 import mono.hg.helpers.PreferenceHelper
 import mono.hg.models.App
 import mono.hg.utils.AppUtils
+import mono.hg.utils.compatHide
+import mono.hg.utils.compatShow
 import java.util.*
 
 /**
@@ -70,10 +70,6 @@ class HiddenAppsPreference : PreferenceFragmentCompat() {
 
         (requireActivity() as SettingsActivity).progressBar.compatHide()
         PreferenceHelper.update("hidden_apps", excludedAppList)
-
-        // We have been sent back. Set the action bar title accordingly.
-        val actionBar = (requireActivity() as SettingsActivity).supportActionBar
-        actionBar?.setTitle(R.string.pref_header_list)
     }
 
     override fun onCreateOptionsMenu(menu: Menu, inflater: MenuInflater) {
@@ -81,8 +77,17 @@ class HiddenAppsPreference : PreferenceFragmentCompat() {
             clear()
             add(0, 1, 100, getString(R.string.action_hidden_app_reset))
             getItem(0).setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
-            getItem(0).isVisible = excludedAppList.isNotEmpty()
+            getItem(0).isVisible = false // Don't show this just yet
             super.onCreateOptionsMenu(this, inflater)
+        }
+    }
+
+    override fun onPrepareOptionsMenu(menu: Menu) {
+        super.onPrepareOptionsMenu(menu)
+        if (excludedAppList.isNotEmpty() && appList.isNotEmpty()) {
+            // Show the 'Restore all menu',
+            // since the user can now see all the available (and hidden) apps
+            menu.getItem(0).isVisible = true
         }
     }
 
@@ -121,6 +126,7 @@ class HiddenAppsPreference : PreferenceFragmentCompat() {
                 )
             }
             hiddenAppAdapter?.notifyDataSetChanged()
+            requireActivity().invalidateOptionsMenu()
             (requireActivity() as SettingsActivity).progressBar.compatHide()
         }
     }

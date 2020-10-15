@@ -1,6 +1,5 @@
 package mono.hg.preferences
 
-import android.content.DialogInterface
 import android.content.res.ColorStateList
 import android.os.Bundle
 import android.util.Patterns
@@ -17,13 +16,13 @@ import androidx.appcompat.app.AlertDialog
 import androidx.core.view.ViewCompat
 import androidx.preference.PreferenceFragmentCompat
 import mono.hg.R
-import mono.hg.SettingsActivity
 import mono.hg.adapters.WebProviderAdapter
 import mono.hg.databinding.FragmentWebProviderBinding
 import mono.hg.databinding.LayoutWebProviderEditDialogBinding
 import mono.hg.helpers.PreferenceHelper
 import mono.hg.models.WebSearchProvider
 import mono.hg.utils.Utils
+import mono.hg.utils.applyAccent
 import java.util.*
 
 
@@ -70,14 +69,6 @@ class WebSearchProviderPreference : PreferenceFragmentCompat() {
                 this.forEach { providerList.add(WebSearchProvider(it.key, it.value)) }
             }
         }
-    }
-
-    override fun onDestroyView() {
-        super.onDestroyView()
-
-        // We have been sent back. Set the action bar title accordingly.
-        val actionBar = (requireActivity() as SettingsActivity).supportActionBar
-        actionBar?.setTitle(R.string.pref_header_web)
     }
 
     override fun onCreateOptionsMenu(menu: Menu, inflater: MenuInflater) {
@@ -162,15 +153,27 @@ class WebSearchProviderPreference : PreferenceFragmentCompat() {
                     return@setPositiveButton
                 }
 
-                if ("none" != PreferenceHelper.getProvider(currentName) &&
-                    currentUrl != PreferenceHelper.providerList[currentName]
-                ) {
-                    // We already have that provider.
-                    Toast.makeText(
-                        requireContext(), R.string.err_provider_exists,
-                        Toast.LENGTH_SHORT
-                    ).show()
-                    return@setPositiveButton
+                if (isEditing) {
+                    if (PreferenceHelper.providerList.containsKey(currentName)
+                        && PreferenceHelper.providerList.containsValue(currentUrl)
+                    ) {
+                        // We already have that provider.
+                        Toast.makeText(
+                            requireContext(), R.string.err_provider_exists,
+                            Toast.LENGTH_SHORT
+                        ).show()
+                        return@setPositiveButton
+                    }
+                } else {
+                    // We don't necessarily care about the URL when we're adding a new engine.
+                    if (PreferenceHelper.providerList.containsKey(currentName)) {
+                        // We already have that provider.
+                        Toast.makeText(
+                            requireContext(), R.string.err_provider_exists,
+                            Toast.LENGTH_SHORT
+                        ).show()
+                        return@setPositiveButton
+                    }
                 }
 
                 if (isEditing) {
@@ -184,11 +187,7 @@ class WebSearchProviderPreference : PreferenceFragmentCompat() {
 
             create().apply {
                 show()
-                with(PreferenceHelper.darkAccent) {
-                    getButton(DialogInterface.BUTTON_NEUTRAL).setTextColor(this)
-                    getButton(DialogInterface.BUTTON_NEGATIVE).setTextColor(this)
-                    getButton(DialogInterface.BUTTON_POSITIVE).setTextColor(this)
-                }
+                applyAccent()
             }
         }
     }

@@ -19,7 +19,6 @@ import android.appwidget.AppWidgetHostView
 import android.content.Context
 import android.view.MotionEvent
 import android.view.ViewConfiguration
-import android.view.ViewGroup
 
 /**
  * Modification of the [AppWidgetHostView] class that allows intercepting touch events
@@ -34,11 +33,11 @@ class LauncherAppWidgetHostView(context: Context?) : AppWidgetHostView(context) 
     }
 
     override fun onInterceptTouchEvent(event: MotionEvent): Boolean {
-        downTime = when (event.action) {
-            MotionEvent.ACTION_DOWN -> System.currentTimeMillis()
-            MotionEvent.ACTION_UP -> 0
+        downTime = when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> event.eventTime
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> 0
             MotionEvent.ACTION_MOVE -> {
-                val isLongPressing = System.currentTimeMillis() - downTime > LONG_PRESS_DURATION
+                val isLongPressing = event.eventTime - downTime > LONG_PRESS_DURATION
                 return if (isLongPressing) {
                     longClickListener?.onLongClick(this)
                     true
@@ -46,14 +45,9 @@ class LauncherAppWidgetHostView(context: Context?) : AppWidgetHostView(context) 
                     false
                 }
             }
-            else ->                 // Let the input fall through.
-                return false
+            else -> return false // Let the input fall through.
         }
         return super.onInterceptTouchEvent(event)
-    }
-
-    override fun getDescendantFocusability(): Int {
-        return ViewGroup.FOCUS_BLOCK_DESCENDANTS
     }
 
     companion object {

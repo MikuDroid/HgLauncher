@@ -21,8 +21,7 @@ class App : AbstractFlexibleItem<App.ViewHolder>, IFilterable<String> {
     private var HINT_MATCH_SCORE = 30
     private var NAME_MATCH_SCORE = 22
     private var layoutType = 0
-    var appName: String = ""
-        private set
+    var appName: String? = ""
     var packageName: String
         private set
     lateinit var userPackageName: String
@@ -32,22 +31,21 @@ class App : AbstractFlexibleItem<App.ViewHolder>, IFilterable<String> {
     var user: Long = 0
         private set
 
-    constructor(appName: String, packageName: String, isAppHidden: Boolean, user: Long) {
+    constructor(appName: String, packageName: String, user: Long) {
         this.packageName = packageName
         this.appName = appName
-        this.isAppHidden = isAppHidden
         this.user = user
     }
 
     constructor(icon: Drawable, packageName: String, user: Long) {
         this.layoutType = PINNED_APP_TYPE
         this.icon = icon
+        this.user = user
         this.packageName = packageName
     }
 
     constructor(packageName: String, user: Long) {
         this.packageName = packageName
-        isAppHidden = false
         this.user = user
     }
 
@@ -98,26 +96,14 @@ class App : AbstractFlexibleItem<App.ViewHolder>, IFilterable<String> {
         holder: ViewHolder, position: Int,
         payloads: List<Any>
     ) {
+        holder.contentView.contentDescription = appName
         holder.name?.text = appName
+        holder.icon.contentDescription = appName
         holder.icon.setImageDrawable(icon)
     }
 
     override fun filter(constraint: String): Boolean {
-        var fuzzyScore = 0
-
-        // See if we can match by hint names.
-        if (hasHintName()) {
-            fuzzyScore = KissFuzzySearch.doFuzzy(hintName, constraint)
-        }
-
-        // Is the hint name strong enough?
-        return if (fuzzyScore >= HINT_MATCH_SCORE) {
-            true
-        } else {
-            // Fall back to app name matching if it isn't.
-            fuzzyScore = KissFuzzySearch.doFuzzy(appName, constraint)
-            fuzzyScore >= NAME_MATCH_SCORE
-        }
+        return KissFuzzySearch.doFuzzy(appName + hintName, constraint) >= NAME_MATCH_SCORE
     }
 
     /**

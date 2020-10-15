@@ -17,11 +17,13 @@ Contributors:
 - Lucas Araujo
 - Maawu
 - Manuela Silva
+- Milo Ivir
 - Paper Mountain Studio
 - Pavle Radosavljević
 - Ruan O. Lima
 - Scott MacDonald
 - sicherist
+- ssantos
 - WaldiS
 
 Libraries and others:
