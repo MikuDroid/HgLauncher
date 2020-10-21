@@ -223,7 +223,6 @@ class LauncherActivity : AppCompatActivity() {
         addAdapterListener()
         addPanelListener()
         registerForContextMenu(touchReceiver)
-        PreferenceHelper.update("package_count", AppUtils.countInstalledPackage(packageManager))
 
         // Start pinning apps.
         updatePinnedApps(true)
@@ -304,11 +303,8 @@ class LauncherActivity : AppCompatActivity() {
     public override fun onResume() {
         super.onResume()
 
-        // Refresh app list and pinned apps if there is a change in package count.
+        // Refresh app pinned apps if there is a change in package count.
         if (AppUtils.hasNewPackage(packageManager)) {
-            // Retrieve the internal package count again.
-            AppUtils.updatePackageCount(packageManager)
-
             updatePinnedApps(true)
         }
 
@@ -468,7 +464,8 @@ class LauncherActivity : AppCompatActivity() {
      * Modifies various views parameters and visibility based on the user preferences.
      */
     private fun applyPrefToViews() {
-        slidingHome.post { // Hide the favourites panel when there's nothing to show.
+        slidingHome.post {
+            // Hide the favourites panel when there's nothing to show.
             if (pinnedAppsAdapter.isEmpty) {
                 pinnedAppsContainer.translationY = pinnedAppsContainer.measuredHeight.toFloat()
                 isFavouritesVisible = false

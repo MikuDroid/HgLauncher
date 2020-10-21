@@ -9,6 +9,7 @@ import android.content.pm.PackageManager
 import android.content.res.ColorStateList
 import android.net.Uri
 import android.os.Bundle
+import android.os.UserManager
 import android.util.SparseArray
 import android.view.Gravity
 import android.view.LayoutInflater
@@ -49,6 +50,7 @@ import mono.hg.views.TogglingLinearLayoutManager
 import mono.hg.wrappers.DisplayNameComparator
 import mono.hg.wrappers.ItemOffsetDecoration
 import java.util.*
+import kotlin.collections.ArrayList
 
 /**
  * Page displaying an app list.
@@ -63,7 +65,7 @@ class AppListFragment : GenericPageFragment() {
     /*
      * Adapter for installed apps.
      */
-    private val appsAdapter = AppAdapter(ArrayList<App>())
+    private val appsAdapter = AppAdapter(appsList)
 
     /*
      * RecyclerView for app list.
@@ -74,6 +76,11 @@ class AppListFragment : GenericPageFragment() {
     * List of excluded apps. These will not be shown in the app list.
     */
     private val excludedAppsList = HashSet<String>()
+
+    /*
+     * The list of currently installed and visible packages.
+     */
+    private var packageNameList = ArrayList<String>()
 
     /*
      * Package manager; casted through getPackageManager().
@@ -95,11 +102,20 @@ class AppListFragment : GenericPageFragment() {
      */
     private var packageBroadcastReceiver: BroadcastReceiver? = null
 
-    private var launcherApps: LauncherApps? = null
-    private var userUtils: UserUtils? = null
+    /*
+     * Job used to load and populate appsAdapter.
+     */
     private var fetchAppsJob: Job? = null
+
+    /*
+     * View bindings of this Page.
+     */
     private var binding: FragmentAppListBinding? = null
     private var loaderBinding: UiLoadProgressBinding? = null
+
+    private var launcherApps: LauncherApps? = null
+    private var userUtils: UserUtils? = null
+    private var userManager: UserManager? = null
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -124,6 +140,10 @@ class AppListFragment : GenericPageFragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+
+        if (Utils.atLeastLollipop()) {
+            userManager = requireActivity().getSystemService(Context.USER_SERVICE) as UserManager
+        }
 
         manager = requireActivity().packageManager
 
@@ -200,8 +220,8 @@ class AppListFragment : GenericPageFragment() {
     override fun onStart() {
         super.onStart()
 
-        if (AppUtils.hasNewPackage(manager) || appsAdapter.isEmpty) {
-            lifecycleScope.launchWhenStarted {
+        if (appsAdapter.isEmpty) {
+            lifecycleScope.launch {
                 fetchAppsJob?.apply {
                     if (this.isCompleted) {
                         appsAdapter.finishedLoading(false)
@@ -217,6 +237,70 @@ class AppListFragment : GenericPageFragment() {
         resetAppFilter()
     }
 
+    override fun onResume() {
+        super.onResume()
+
+        // Detect newly installed/removed apps.
+        // This check is used when changes occur
+        // when the launcher is in the background (i.e, not caught by the receiver).
+        lifecycleScope.launch {
+            val mutableAdapterList = ArrayList<App>()
+
+            withContext(Dispatchers.Default) {
+                // Create the second list to compare against the first.
+                val newPackageNameList = getPackageNameList(ArrayList())
+
+                if (newPackageNameList != packageNameList.sorted() && appsAdapter.hasFinishedLoading()) {
+                    mutableAdapterList.addAll(appsAdapter.currentItems.toMutableList())
+
+                    // Find the difference in the two lists.
+                    // Since the new list and the old list can vary in size,
+                    // we can't really just subtract it. We need to subtract
+                    // twice then add the differences together.
+                    newPackageNameList.subtract(packageNameList)
+                        .plus(packageNameList.subtract(newPackageNameList))
+                        .forEach { app ->
+                            // Handle packages changes from another user.
+                            val userSplit = app.split("-")
+                            val componentName = if (userSplit.size == 2) userSplit[1] else app
+                            val user =
+                                if (userSplit.size == 2) userSplit[0].toLong() else userUtils?.currentSerial
+                                    ?: 0
+
+                            // First, check if this user & component name combination
+                            // exists in the current list. This is because our list
+                            // won't be notified on an app update. There can only
+                            // be two states: installing or removing.
+                            mutableAdapterList.find { it.userPackageName.contains(app) }?.apply {
+                                // If it exists, then it's probably an uninstall signal.
+                                mutableAdapterList.remove(this)
+                            } ?: run {
+                                // Otherwise, try and add this app.
+                                manager.getLaunchIntentForPackage(AppUtils.getPackageName(componentName))
+                                    ?.apply {
+                                        addApp(mutableAdapterList, componentName, user)
+                                    }
+                            }
+                        }
+                }
+
+                withContext(Dispatchers.Main) {
+                    if (mutableAdapterList.isNotEmpty()) {
+                        appsAdapter.updateDataSet(
+                            mutableAdapterList.sortedWith(
+                                DisplayNameComparator(PreferenceHelper.isListInverted)
+                            )
+                        )
+                    }
+                }
+
+                // Update the internal list.
+                getPackageNameList(packageNameList)
+                AppUtils.updatePackageCount(manager)
+            }
+        }
+    }
+
     override fun isAcceptingSearch(): Boolean {
         return true
     }
@@ -224,7 +308,7 @@ class AppListFragment : GenericPageFragment() {
     override fun commitSearch(query: String) {
         if (appsAdapter.hasNewFilter(query)) {
             appsAdapter.setFilter(query)
-            appsAdapter.filterItems(appsList)
+            appsAdapter.filterItems()
         }
     }
 
@@ -332,9 +416,9 @@ class AppListFragment : GenericPageFragment() {
                     if (hasLauncherCategory && appsAdapter.hasFinishedLoading()) {
                         // Add our new app to the list.
                         lifecycleScope.launch {
-                            var newList: List<App>
+                            val newList: MutableList<App> = appsAdapter.currentItems.toMutableList()
                             withContext(Dispatchers.Default) {
-                                newList = addApp(componentName, user)
+                                addApp(newList, componentName, user)
                             }
                             appsAdapter.updateDataSet(newList)
                         }
@@ -352,6 +436,7 @@ class AppListFragment : GenericPageFragment() {
                 }
 
                 // We should recount here, regardless of whether we update the list or not.
+                getPackageNameList(packageNameList)
                 AppUtils.updatePackageCount(requireActivity().packageManager)
             }
         }
@@ -381,12 +466,15 @@ class AppListFragment : GenericPageFragment() {
         fetchAppsJob = lifecycleScope.launch {
             var newList: List<App>
             withContext(Dispatchers.Default) {
+                getPackageNameList(packageNameList)
                 newList = AppUtils.loadApps(requireActivity(), hideHidden = true, shouldSort = true)
-                appsList.addAll(newList)
             }
 
             appsAdapter.updateDataSet(newList)
             appsAdapter.finishedLoading(true)
+
+            // Always update the package count when retrieving apps.
+            AppUtils.updatePackageCount(manager)
         }
     }
 
@@ -397,16 +485,21 @@ class AppListFragment : GenericPageFragment() {
             PreferenceHelper.update("hidden_apps", excludedAppsList)
 
             // Reload the app list!
+            appsList.remove(this)
             appsAdapter.removeItem(positionInAdapter)
         }
     }
 
-    private fun addApp(componentName: String, user: Long): List<App> {
-        with (appsAdapter.currentItems.toMutableList()) {
+    private fun addApp(list: MutableList<App>, componentName: String, user: Long) {
+        with(list) {
             // If there's an app with a matching componentName,
             // then it's probably the same app. Update that entry instead
             // of adding a new app.
-            this.find { it.packageName == componentName }?.apply {
+            if (user == userUtils?.currentSerial) {
+                this.find { it.userPackageName == componentName }
+            } else {
+                this.find { it.userPackageName == "${user}-${componentName}" }
+            }?.apply {
                 appName = AppUtils.getPackageLabel(
                     requireActivity().packageManager,
                     componentName
@@ -434,7 +527,7 @@ class AppListFragment : GenericPageFragment() {
                 }.also {
                     // We need to use currentItems here because
                     // using the default list would basically create a filter.
-                    return this.apply {
+                    this.apply {
                         // Don't add the new app if we already have it.
                         // This probably caused by two receivers firing at once.
                         if (! this.contains(it)) {
@@ -446,15 +539,44 @@ class AppListFragment : GenericPageFragment() {
                     }
                 }
             }
-            return this
         }
     }
 
     private fun resetAppFilter() {
         if (appsAdapter.hasFilter()) {
             appsAdapter.setFilter("")
-            appsAdapter.filterItems(appsList)
+            appsAdapter.filterItems()
         }
+    }
+
+    private fun getPackageNameList(list: MutableList<String>): List<String> {
+        // Clear the list first, since mapTo() will duplicate the contents.
+        list.clear()
+
+        // Get the list of package names.
+        if (Utils.atLeastLollipop()) {
+            // Handle multiple user scenario here.
+            userManager?.apply {
+                this.userProfiles.forEach { profile ->
+                    launcherApps?.getActivityList(null, profile)?.mapTo(list) {
+                        if (userUtils?.currentUser != profile) {
+                            "${userUtils?.getSerial(profile)}-${it.componentName.flattenToString()}"
+                        } else {
+                            it.componentName.flattenToString()
+                        }
+                    }
+                }
+            }
+        } else {
+            Intent(Intent.ACTION_MAIN, null).apply { addCategory(Intent.CATEGORY_LAUNCHER) }.also {
+                return manager.queryIntentActivities(it, 0).mapTo(list) { resolve ->
+                    "${resolve.activityInfo.packageName}/${resolve.activityInfo.name}"
+                }
+            }
+        }
+
+        // Return the sorted list.
+        return list.sorted()
     }
 
     /**
